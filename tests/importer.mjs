@@ -4,10 +4,11 @@ import { Importer } from "../src/importer/core.js";
 import { CONV, SEED } from "../src/data/seed.js";
 import { toBrainNeurons } from "../scripts/importer/llm.mjs";
 import { makeExport, TOPIC_TITLES } from "./fixtures/claude-export.mjs";
+import { makeZip } from "./fixtures/zip.mjs";
 
 let failures = 0;
-function test(name, fn) {
-  try { fn(); console.log(`✓ ${name}`); }
+async function test(name, fn) {
+  try { await fn(); console.log(`✓ ${name}`); }
   catch (e) { failures++; console.log(`✗ ${name}\n    ${e.message.split("\n").join("\n    ")}`); }
 }
 const NOW = Date.parse("2026-09-29");
@@ -15,7 +16,7 @@ const run = (base = [], data = makeExport()) => Importer.fromExport(data, { base
 const imported = (brain) => brain.neurons.filter((n) => n.source === "import");
 const homeOf = (brain, title) => imported(brain).filter((n) => n.conversations.some((c) => c.title === title));
 
-test("parses the claude.ai export and skips empty conversations", () => {
+await test("parses the claude.ai export and skips empty conversations", () => {
   const convs = Importer.parseExport(makeExport());
   assert.equal(convs.length, 25);
   assert.ok(convs.every((c) => c.id && c.title && c.date && c.human.length));
@@ -23,7 +24,7 @@ test("parses the claude.ai export and skips empty conversations", () => {
   assert.equal(Importer.isClaudeExport(SEED), false);
 });
 
-test("reads a ChatGPT export: user and assistant turns in time order", () => {
+await test("reads a ChatGPT export: user and assistant turns in time order", () => {
   const data = [{ id: "gpt-1", title: "Figma auto layout", create_time: 1760000000, update_time: 1760003600, mapping: {
     a: { message: { author: { role: "system" }, content: { parts: ["You are ChatGPT"] }, create_time: 1 } },
     c: { message: { author: { role: "assistant" }, content: { parts: ["Use fixed padding."] }, create_time: 3 } },
@@ -35,7 +36,7 @@ test("reads a ChatGPT export: user and assistant turns in time order", () => {
   assert.throws(() => Importer.parseExport([{ foo: 1 }]), /isn’t a Claude or ChatGPT conversations\.json/);
 });
 
-test("finds conversations past an unusual first entry or inside a wrapper object", () => {
+await test("finds conversations past an unusual first entry or inside a wrapper object", () => {
   const convs = makeExport();
   assert.equal(Importer.exportKind([{ uuid: "stub" }, ...convs]), "claude");
   assert.equal(Importer.parseExport([{ uuid: "stub" }, ...convs]).length, 25);
@@ -44,7 +45,7 @@ test("finds conversations past an unusual first entry or inside a wrapper object
   assert.equal(Importer.parseExport(alt).length, 25);
 });
 
-test("names the wrong export file instead of a generic error", () => {
+await test("names the wrong export file instead of a generic error", () => {
   assert.match(Importer.describe([{ uuid: "u", full_name: "A", email_address: "a@b.c" }]), /users\.json/);
   assert.match(Importer.describe([{ uuid: "p", name: "P", docs: [], prompt_template: "" }]), /projects\.json/);
   assert.match(Importer.describe({ conversations_memory: "", project_memories: {} }), /memories\.json/);
@@ -52,7 +53,49 @@ test("names the wrong export file instead of a generic error", () => {
   assert.match(Importer.describe([]), /empty list/);
 });
 
-test("groups conversations into knowledge, not one neuron per chat", () => {
+const file = (name, text) => ({ name, bytes: new TextEncoder().encode(text) });
+const MANIFEST = { instructions: "Download each file using the export_url.", total_files: 3, version: "1.0", data_files: [
+  { category: "projects", filename: "projects-000.zip", export_url: "https://claude.ai/export/org/download/aaa" },
+  { category: "conversations", filename: "conversations-000.zip", export_url: "https://claude.ai/export/org/download/bbb" },
+  { category: "conversations", filename: "conversations-001.zip", export_url: "http://evil.example/steal" }] };
+
+await test("reads the export zips from the email without unzipping, across parts", async () => {
+  const convs = makeExport(), json = (x) => JSON.stringify(x);
+  const one = await Importer.readExport([{ name: "conversations-000.zip", bytes: makeZip([{ name: "conversations.json", text: json(convs) }]) }]);
+  assert.equal(one.kind, "claude");
+  assert.equal(Importer.parseExport(one.conversations).length, 25);
+  // two parts, a folder inside the zip, a stored entry, macOS junk, and one chat duplicated as a metadata stub
+  const stub = { ...convs[0], chat_messages: [] };
+  const parts = [
+    { name: "conversations-000.zip", bytes: makeZip([{ name: "export/conversations.json", text: json(convs.slice(0, 12)) }, { name: "__MACOSX/export/._conversations.json", text: "junk", store: true }]) },
+    { name: "conversations-001.zip", bytes: makeZip([{ name: "conversations.json", text: json([stub, ...convs.slice(12)]), store: true }]) }];
+  const both = await Importer.readExport(parts);
+  assert.equal(both.conversations.length, convs.length);
+  assert.equal(both.conversations.find((c) => c.uuid === convs[0].uuid).chat_messages.length, convs[0].chat_messages.length);
+  assert.equal(Importer.fromExport(both.conversations, { conv: CONV, now: NOW }).stats.conversations, 25);
+});
+
+await test("reads JSON Lines, plain conversations.json and a brain.json", async () => {
+  const convs = makeExport();
+  assert.equal((await Importer.readExport([file("conversations.jsonl", convs.map((c) => JSON.stringify(c)).join("\n"))])).conversations.length, convs.length);
+  assert.equal((await Importer.readExport([file("renamed.json", JSON.stringify({ conversations: convs }))])).conversations.length, convs.length);
+  assert.deepEqual((await Importer.readExport([file("brain.json", JSON.stringify(SEED))])).data.version, SEED.version);
+});
+
+await test("the export manifest is recognised and only claude.ai links are kept", async () => {
+  const { manifest } = await Importer.readExport([file("28a45343-manifest.json", JSON.stringify(MANIFEST))]);
+  assert.deepEqual(manifest.filter((f) => f.category === "conversations").map((f) => f.url), ["https://claude.ai/export/org/download/bbb", null]);
+  assert.match(Importer.describe(MANIFEST), /export manifest/);
+});
+
+await test("a zip without chats, or a broken zip, says which file to use", async () => {
+  const projects = makeZip([{ name: "projects.json", text: JSON.stringify([{ uuid: "p", name: "P", docs: [], prompt_template: "" }]) }]);
+  await assert.rejects(Importer.readExport([{ name: "projects-000.zip", bytes: projects }]), /No conversations in projects-000\.zip.*conversations-000\.zip/);
+  await assert.rejects(Importer.readExport([{ name: "frames-000.zip", bytes: makeZip([{ name: "a.png", text: "x" }]) }]), /no JSON files inside/);
+  await assert.rejects(Importer.readExport([{ name: "cut.zip", bytes: projects.slice(0, 40) }]), /couldn’t be opened/);
+});
+
+await test("groups conversations into knowledge, not one neuron per chat", () => {
   const { brain, stats } = run();
   assert.ok(stats.topics <= 10, `expected ≤10 topics from 25 chats, got ${stats.topics}`);
   for (const [topic, titles] of Object.entries(TOPIC_TITLES)) {
@@ -65,7 +108,7 @@ test("groups conversations into knowledge, not one neuron per chat", () => {
   assert.equal(recipe.conversations.length, 1, "an unrelated one-off chat shouldn't join a topic");
 });
 
-test("new neurons are private, well-formed and linked to real ids", () => {
+await test("new neurons are private, well-formed and linked to real ids", () => {
   const { brain } = run();
   const ids = new Set(brain.neurons.map((n) => n.id));
   assert.equal(ids.size, brain.neurons.length, "ids are unique");
@@ -81,7 +124,7 @@ test("new neurons are private, well-formed and linked to real ids", () => {
   assert.ok(imported(brain).some((n) => n.connections.length), "related topics get connected");
 });
 
-test("merging keeps the seed brain intact", () => {
+await test("merging keeps the seed brain intact", () => {
   const { brain } = run(SEED.neurons);
   for (const s of SEED.neurons) {
     const n = brain.neurons.find((x) => x.id === s.id);
@@ -91,7 +134,7 @@ test("merging keeps the seed brain intact", () => {
   assert.equal(brain.neurons.length, SEED.neurons.length + imported(brain).length);
 });
 
-test("re-importing is idempotent", () => {
+await test("re-importing is idempotent", () => {
   const first = run(SEED.neurons).brain;
   const { brain, stats } = run(first.neurons);
   assert.equal(stats.added, 0);
@@ -100,7 +143,7 @@ test("re-importing is idempotent", () => {
   for (const n of imported(brain)) assert.equal(new Set(n.conversations.map((c) => c.id)).size, n.conversations.length, "no duplicate conversations");
 });
 
-test("curated fields survive a re-import", () => {
+await test("curated fields survive a re-import", () => {
   const first = run(SEED.neurons).brain;
   const target = imported(first).find((n) => n.conversations.length > 2);
   Object.assign(target, { title: "Auto Layout", visibility: "public", weight: 5, insights: ["Hand-written insight"] });
@@ -109,7 +152,7 @@ test("curated fields survive a re-import", () => {
   assert.deepEqual([n.title, n.visibility, n.weight, n.insights], ["Auto Layout", "public", 5, ["Hand-written insight"]]);
 });
 
-test("new conversations join the existing neuron on the next import", () => {
+await test("new conversations join the existing neuron on the next import", () => {
   const full = makeExport();
   const early = full.filter((c) => c.name !== "Figma variants cleanup");
   const first = run(SEED.neurons, early).brain;
@@ -119,7 +162,7 @@ test("new conversations join the existing neuron on the next import", () => {
   assert.ok(homes[0].conversations.length > 1, "joined an existing topic instead of forming a lone neuron");
 });
 
-test("Claude pass output is validated and mapped back to real conversations", () => {
+await test("Claude pass output is validated and mapped back to real conversations", () => {
   const convs = Importer.parseExport(makeExport());
   const aliases = new Map(convs.map((c, i) => ["c" + (i + 1), c]));
   const base = SEED.neurons.map((n) => Importer.expand(n, CONV));
@@ -145,7 +188,7 @@ test("Claude pass output is validated and mapped back to real conversations", ()
   assert.ok(ds.conversations.some((c) => c.id === convs[1].id), "seed neuron gains the conversation");
 });
 
-test("handles 3,000 conversations quickly", () => {
+await test("handles 3,000 conversations quickly", () => {
   const base = makeExport().filter((c) => c.chat_messages.length);
   const big = Array.from({ length: 3000 }, (_, i) => ({ ...base[i % base.length], uuid: `big-${i}` }));
   const t = performance.now();

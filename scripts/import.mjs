@@ -1,13 +1,13 @@
 // Claude history → brain.json. See CLAUDE.md "Importer".
-//   npm run import -- <conversations.json | export folder> [options]
+//   npm run import -- <conversations-000.zip | conversations.json | export folder> [more files…] [options]
 //     --llm            run the Claude pass (reads every chat; costs API credits, asks first)
 //     --yes            skip the cost confirmation for --llm
 //     --out <file>     default data/brain.json (gitignored: it's personal)
 //     --base <file>    brain to merge into. Default: --out if it exists, else the seed brain
 //     --threshold <n>  offline grouping strictness, 0.1 (looser) to 0.3 (stricter). Default 0.16
 // Then load the result in the app: Import → choose data/brain.json.
-import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile, readdir, writeFile, mkdir, stat } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { Importer } from "../src/importer/core.js";
@@ -16,18 +16,32 @@ import { CONV, SEED } from "../src/data/seed.js";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2), flag = (f) => args.includes(f);
 const opt = (f, d) => { const i = args.indexOf(f); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
-const input = args.find((a, i) => !a.startsWith("--") && !["--out", "--base", "--threshold"].includes(args[i - 1]));
+const inputs = args.filter((a, i) => !a.startsWith("--") && !["--out", "--base", "--threshold"].includes(args[i - 1]));
 const out = resolve(opt("--out", join(root, "data/brain.json")));
 const cachePath = join(root, ".brain-cache/digests.json");
 const exists = (p) => stat(p).then(() => true, () => false);
 const fail = (m) => { console.error("✗ " + m); process.exit(1); };
 
-if (!input) fail("Pass the path to conversations.json (or the unzipped export folder).\n  npm run import -- ~/Downloads/claude-export/conversations.json");
-let path = resolve(input);
-if ((await stat(path).catch(() => fail(`Not found: ${input}`))).isDirectory()) path = join(path, "conversations.json");
+if (!inputs.length) fail("Pass the export: the zip from the email (no need to unzip), conversations.json, or the export folder.\n  npm run import -- ~/Downloads/conversations-000.zip");
+// A folder means its conversations.json, or else every conversations*.zip / *.json in it.
+const paths = [];
+for (const input of inputs) {
+  const p = resolve(input);
+  if (!(await stat(p).catch(() => fail(`Not found: ${input}`))).isDirectory()) { paths.push(p); continue; }
+  const names = await readdir(p);
+  const pick = names.includes("conversations.json") ? ["conversations.json"] : names.filter((n) => /^conversations.*\.(zip|jsonl?)$/i.test(n));
+  if (!pick.length) fail(`No conversations.json or conversations-*.zip in ${input}.`);
+  paths.push(...pick.map((n) => join(p, n)));
+}
 let data;
-if (/\.zip$/i.test(path)) fail("That's the zipped export. Unzip it first, then pass conversations.json or the unzipped folder.");
-try { data = JSON.parse(await readFile(path, "utf8")); } catch (e) { fail(e instanceof SyntaxError ? `${path} isn't valid JSON.` : `Couldn't read ${path}.`); }
+try {
+  const r = await Importer.readExport(await Promise.all(paths.map(async (p) => ({ name: basename(p), bytes: new Uint8Array(await readFile(p)) }))));
+  if (r.manifest) {
+    const convs = r.manifest.filter((f) => f.category === "conversations" && f.url);
+    fail(`That's the export manifest: it lists download links, not your chats.${convs.length ? " Download " + convs.map((f) => f.filename).join(", ") + " (each link works once), then pass the zip:\n  " + convs.map((f) => f.url).join("\n  ") : ""}`);
+  }
+  data = r.conversations || r.data;
+} catch (e) { fail(e instanceof SyntaxError ? `${paths.map((p) => basename(p)).join(", ")} isn't valid JSON.` : e.code ? `Couldn't read ${paths.join(", ")}.` : e.message); }
 
 const basePath = opt("--base", (await exists(out)) ? out : null);
 let base = SEED.neurons;

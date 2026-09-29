@@ -61,8 +61,8 @@ Every table has RLS enabled and no access for `anon`. `profiles` and `brains` ma
 
 | Provider | How data gets in | Why |
 |---|---|---|
-| Claude | Export → import (`conversations.json`) | Anthropic has no API that lets third-party apps read a person’s claude.ai conversation history. No passwords are asked for or stored. |
-| ChatGPT | Export → import (`conversations.json`) | Same: OpenAI has no official history API for consumer accounts. The ChatGPT export format is parsed. |
+| Claude | Export → import (`conversations-000.zip` from the export email, or the manifest `.json`, which shows its download links; no unzipping) | Anthropic has no API that lets third-party apps read a person’s claude.ai conversation history. No passwords are asked for or stored. |
+| ChatGPT | Export → import (the export zip or its `conversations.json`) | Same: OpenAI has no official history API for consumer accounts. The ChatGPT export format is parsed. |
 | Import | `brain.json` or either export | — |
 
 `api/_lib/providers.js` defines `connect / disconnect / getStatus / sync / normalize / process` and declares each provider’s capabilities. The UI only offers what a provider can really do. Claude’s `connect()` returns `not_available` with an explanation, and nothing pretends to sync. `next_sync_at` stays empty for export-based sources.
@@ -103,7 +103,7 @@ Authentication → Emails → **Magic Link**: set the subject to “Your MY AI B
 
 **STEP 8 — Local environment variables.** `cp .env.example .env.local`, then fill in `SUPABASE_URL` and `SUPABASE_ANON_KEY` (Project Settings → API). Leave `SITE_URL` empty locally.
 
-**STEP 9 — Test locally.** `npm install && npm run dev` → http://localhost:5173 → Build My AI Brain → sign in with each method → Connect Claude → import a `conversations.json`. Then `npm run build && npm run start` to try the production build.
+**STEP 9 — Test locally.** `npm install && npm run dev` → http://localhost:5173 → Build My AI Brain → sign in with each method → Connect Claude → choose `conversations-000.zip` from your export email. Then `npm run build && npm run start` to try the production build.
 
 **STEP 10 — Push to GitHub.** `git status` must not list `.env.local`, since it’s gitignored. Then `git push`.
 

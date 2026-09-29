@@ -857,25 +857,40 @@ document.getElementById("copyJson").addEventListener("click",()=>{const txt=JSON
   const fb2=()=>{document.getElementById("copyArea").innerHTML=`<textarea class="copy" id="copyTa" readonly aria-label="Brain data as JSON"></textarea>`;const ta=document.getElementById("copyTa");ta.value=txt;ta.focus();ta.select();impMsg.className="msg";impMsg.textContent="Copying isn’t available here. The JSON is selected below, ready to copy."};
   try{navigator.clipboard.writeText(txt).then(()=>{impMsg.className="msg";impMsg.textContent=`Copied ${G.neurons.length} neurons as JSON.`},fb2)}catch(e){fb2()}});
 const fileIn=document.getElementById("file"),dropEl=document.getElementById("drop");
-fileIn.addEventListener("change",()=>{if(fileIn.files[0])readFile(fileIn.files[0]);fileIn.value=""});
+fileIn.addEventListener("change",()=>{readFiles(fileIn.files);fileIn.value=""});
 ["dragenter","dragover"].forEach(t=>addEventListener(t,e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){e.preventDefault();dropEl.classList.add("over")}}));
 ["dragleave","drop"].forEach(t=>addEventListener(t,()=>dropEl.classList.remove("over")));
-addEventListener("drop",e=>{if(!e.dataTransfer||!e.dataTransfer.files.length)return;e.preventDefault();if(scrim.hidden)openImport();readFile(e.dataTransfer.files[0])});
+addEventListener("drop",e=>{if(!e.dataTransfer||!e.dataTransfer.files.length)return;e.preventDefault();if(scrim.hidden)openImport();readFiles(e.dataTransfer.files)});
 // Where an import lands: the account's Brain when signed in, otherwise this browser.
 const IMPORT_UI={msg:impMsg,close:closeImport};
-function readFile(f,ui=IMPORT_UI){const r=new FileReader();r.onload=()=>{try{
-    if(r.result.startsWith("PK\u0003\u0004"))throw new Error("That’s the zipped export. Unzip it first, then choose conversations.json from the folder.");
-    const data=JSON.parse(r.result);
-    if(Importer.exportKind(data)){importExport(data,ui);return}
+// Reads what the person chose: conversations.json, the zips from the export email (no unzipping), several
+// files at once, the export manifest (answered with its download links), or a brain.json.
+async function readFiles(list,ui=IMPORT_UI){
+  const files=[...list];if(!files.length)return;
+  ui.msg.className="msg";ui.msg.textContent=files.length>1?`Reading ${files.length} files…`:`Reading ${files[0].name}…`;
+  try{
+    const r=await Importer.readExport(await Promise.all(files.map(async f=>({name:f.name,bytes:new Uint8Array(await f.arrayBuffer())}))));
+    if(r.conversations){importExport(r.conversations,ui);return}
+    if(r.manifest){showManifest(r.manifest,ui);return}
+    const data=r.data;
     // A brain.json is {neurons:[…]} or a list of titled neurons; anything else is the wrong file from an export.
     const isBrain=data&&(Array.isArray(data.neurons)||Array.isArray(data)&&data.some(n=>n&&typeof n.title==="string"));
     if(!isBrain)throw new Error(Importer.describe(data));
     const t=normalize(data);if(!t.neurons.length)throw new Error("The file has no neurons in it.");
-    const list=Array.isArray(data)?data:data.neurons;
-    if(ownBrain()){commitBrain({neurons:Importer.merge(APP.base,list,{conv:CONV}).neurons},"import",`Read ${t.neurons.length} neurons and ${t.edges.length} connections.`,ui);return}
+    const neurons=Array.isArray(data)?data:data.neurons;
+    if(ownBrain()){commitBrain({neurons:Importer.merge(APP.base,neurons,{conv:CONV}).neurons},"import",`Read ${t.neurons.length} neurons and ${t.edges.length} connections.`,ui);return}
     load(data);store("data",JSON.stringify(data));localBanner();ui.msg.className="msg";ui.msg.textContent=`Imported ${t.neurons.length} neurons and ${t.edges.length} connections.`;setTimeout(ui.close,900);
-  }catch(err){ui.msg.className="msg err";ui.msg.textContent=err instanceof SyntaxError?"That file isn’t valid JSON. Check it opens in a JSON viewer, then try again.":err.message}};
-  r.onerror=()=>{ui.msg.className="msg err";ui.msg.textContent="The file couldn’t be read. Try choosing it again."};r.readAsText(f)}
+  }catch(err){ui.msg.className="msg err";ui.msg.textContent=err instanceof SyntaxError?"That file isn’t valid JSON. Check it opens in a JSON viewer, then try again.":err instanceof DOMException?"The file couldn’t be read. Try choosing it again.":err.message}}
+// The export email's manifest lists one-time links; the chats are in the "conversations" zips.
+function showManifest(files,ui){
+  const convs=files.filter(f=>f.category==="conversations"&&f.url),many=convs.length>1;
+  ui.msg.className="msg";ui.msg.replaceChildren(convs.length
+    ?`This is the export manifest: it lists download links, not your chats. Download ${many?`these ${convs.length} zips`:"this zip"}, then choose ${many?"them all":"it"} here. No need to unzip. Each link works once.`
+    :"This is the export manifest, but it has no conversations link. Request a new export from claude.ai → Settings → Privacy.");
+  if(!convs.length)return;
+  const row=document.createElement("span");row.className="links";
+  for(const f of convs){const a=document.createElement("a");a.className="lbtn";a.href=f.url;a.target="_blank";a.rel="noopener noreferrer";a.textContent=`Download ${f.filename}`;row.append(a)}
+  ui.msg.append(row)}
 // A raw Claude or ChatGPT export is grouped into knowledge right here, in the browser. Full
 // conversations never leave it; only the knowledge they form is saved.
 function importExport(data,ui=IMPORT_UI){
@@ -1024,18 +1039,19 @@ async function adoptLocal(){const lb=localBrain();if(!lb)return;stage(null);open
 
 /* connected AI: honest about what each provider allows */
 const GUIDE={
-  claude:{label:"Claude",steps:["claude.ai → Settings → Privacy → Export data","Open the email link and download the zip","Unzip it and choose conversations.json"]},
-  chatgpt:{label:"ChatGPT",steps:["chatgpt.com → Settings → Data controls → Export data","Open the email link and download the zip","Unzip it and choose conversations.json"]}};
+  claude:{label:"Claude",steps:["claude.ai → Settings → Privacy → Export data","From the email, download conversations-000.zip (if you get a manifest .json instead, choose it here and it shows the links)","Choose the zip here. No need to unzip"]},
+  chatgpt:{label:"ChatGPT",steps:["chatgpt.com → Settings → Data controls → Export data","Download the zip from the email","Choose the zip here. No need to unzip"]}};
+const ACCEPT=".json,.jsonl,.zip,application/json,application/zip";
 function openConnect(p){const g=GUIDE[p],src=APP.sources.find(s=>s.provider===p);
   $("connect").innerHTML=`<button class="ibtn x" data-act="close" aria-label="Close"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
     <p class="mono eyebrow">Connect ${g.label}</p><h2 id="connectTitle">Bring in your ${g.label} history.</h2>
     <p class="sub">${g.label} doesn’t offer an official way for apps to read your conversations, so there’s no password to share and nothing to sign in to. Your data export is the supported route.</p>
     <ol class="how">${g.steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ol>
     ${src&&src.status==="connected"?`<p class="state mono"><i></i>Imported · last import ${esc(Cloud.ago(src.last_synced_at))} · next: import a newer export</p>`:""}
-    <div class="row"><label class="cta mag" for="connectFile">Choose conversations.json</label><input type="file" id="connectFile" accept=".json,application/json" class="sr"></div>
+    <div class="row"><label class="cta mag" for="connectFile">Choose export file</label><input type="file" id="connectFile" accept="${ACCEPT}" multiple class="sr"></div>
     <p class="msg" id="connectMsg" role="status" aria-live="polite"></p>
     <p class="fine">Grouped in your browser. Full conversations never leave this device; only the knowledge they form is saved to your Brain.</p>`;
-  $("connectFile").addEventListener("change",e=>{const f=e.target.files[0];if(f)readFile(f,{msg:$("connectMsg"),close:()=>stage(null)})});stage("connect")}
+  $("connectFile").addEventListener("change",e=>{readFiles(e.target.files,{msg:$("connectMsg"),close:()=>stage(null)});e.target.value=""});stage("connect")}
 $("connect").addEventListener("click",e=>{if(e.target.closest('[data-act="close"]'))stage(ownBrain()&&!APP.base.length?"welcome":null)});
 
 /* account */

@@ -81,14 +81,14 @@
     <label class="drop" id="drop" for="file">
       <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <strong>Import your Claude history</strong>
-      <span>Drop your Claude export (conversations.json) or a brain.json. Everything stays in this browser.</span>
-      <span class="cta">Choose file</span>
-      <small>conversations.json from claude.ai → Settings → Privacy → Export data, or .json in the neuron schema below</small>
-      <input id="file" type="file" accept=".json,application/json" class="sr">
+      <span>Drop the export from your email (conversations-000.zip, no need to unzip), conversations.json, or a brain.json. Everything stays in this browser.</span>
+      <span class="cta">Choose files</span>
+      <small>claude.ai → Settings → Privacy → Export data. Got a manifest .json instead of a zip? Choose it and it shows the download links.</small>
+      <input id="file" type="file" accept=".json,.jsonl,.zip,application/json,application/zip" multiple class="sr">
     </label>
     <div class="msg" id="impMsg" role="status" aria-live="polite"></div>
     <div class="pipe mono"><span>Conversations</span><i>→</i><span>Topics</span><i>→</i><span>Knowledge</span><i>→</i><span>Neurons</span><i>→</i><span>Connections</span></div>
-    <p>Chats are grouped into knowledge first, so fifty conversations about Figma become one Figma neuron with its own connections. Here, grouping goes by shared topics. For what you learned, built and concluded in each, run the Claude pass from the project: <code>npm run import -- conversations.json --llm</code></p>
+    <p>Chats are grouped into knowledge first, so fifty conversations about Figma become one Figma neuron with its own connections. Here, grouping goes by shared topics. For what you learned, built and concluded in each, run the Claude pass from the project: <code>npm run import -- conversations-000.zip --llm</code></p>
     <p>The seed brain comes from my project notes, and conversation titles are descriptive until the real export lands. The fine lines and particles are structure, shaped by how active each area is; only the bright nodes are knowledge.</p>
     <div class="links">
       <button class="lbtn" id="copyJson">Copy data as JSON</button>

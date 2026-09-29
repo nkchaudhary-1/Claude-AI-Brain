@@ -13,7 +13,7 @@ A living spatial knowledge network of everything Neelesh has explored, learned a
 npm run dev          # http://localhost:5173: source + /api functions (reads .env.local; no env = local mode)
 npm run build        # → dist/ (hosted app, public seed, hashed assets) + dist-artifact/artifact.html (claude.ai, full seed)
 npm run start        # serves dist/ + /api with vercel.json's headers and CSP
-npm run import -- <conversations.json | export folder> [--llm]   # → data/brain.json (see Importer)
+npm run import -- <conversations-000.zip | conversations.json | folder> [--llm]   # → data/brain.json (see Importer)
 npm test             # importer unit tests, RLS tests (PGlite), headless Chromium smoke test → tests/output/*.png
 npm run test:rls     # row level security against the real migration
 npm run test:integration  # Docker: supabase/postgres + postgrest + GoTrue stand-in, full API end to end
@@ -97,7 +97,7 @@ A neuron is authored in `src/data/seed.js` or imported as `brain.json` (schema i
 
 ## Importer
 
-Conversations → Topics → Knowledge → Neurons → Connections. Input is `conversations.json` from claude.ai → Settings → Privacy → Export data (unzip it first). ChatGPT `conversations.json` is parsed too. The wrong file (users.json, projects.json, memories.json, the zip) gets a message naming it (`Importer.describe`).
+Conversations → Topics → Knowledge → Neurons → Connections. Input comes from claude.ai → Settings → Privacy → Export data. The email now sends a **manifest** `.json` of one-time links to several zips (`conversations-000.zip`, `projects-000.zip`, `memories-000.zip`, …); older exports were one zip with `conversations.json`. `Importer.readExport(files)` takes any of it without unzipping: zips (a small reader on `DecompressionStream`, stored + deflate, no zip64), several parts at once (deduped by uuid, fuller copy wins), JSON or JSON Lines, and the manifest itself, which answers with its `conversations` download links (claude.ai `/export/` URLs only). ChatGPT exports are parsed too. The wrong file gets a message naming it (`Importer.describe`).
 
 **Two passes, one merge.**
 1. **Offline** (`Importer.fromExport`, in the page and the CLI). TF-IDF over titles (×3) and the person's own messages (code blocks stripped, first 4k chars), unigrams + bigrams. Greedy time-ordered clustering at cosine ≥ `threshold` (default 0.16), two refine passes, a union-find merge of near-identical topics, and one-offs folded in only when close. Labels are the terms most of a cluster's chats share and the rest of the history doesn't (`Auto Layout · Figma`). Type, domains and status come from keyword rules and recency; weight from chat count and turns. It never writes `learned`, `created` or `insights`. Those stay empty rather than guessed. About 2s for 3,000 varied conversations on the main thread.

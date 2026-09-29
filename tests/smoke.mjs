@@ -9,6 +9,7 @@ import { chromium } from "playwright";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { makeExport } from "./fixtures/claude-export.mjs";
+import { makeZip } from "./fixtures/zip.mjs";
 import { fileURLToPath } from "node:url";
 import { SEED } from "../src/data/seed.js";
 
@@ -75,15 +76,20 @@ await scenario("stress-3000", { width: 1440, height: 900 }, [], { hash: "#stress
 await scenario("empty", { width: 1440, height: 900 }, [], { hash: "#empty", wait: 4000 });
 // Drop a (synthetic) raw claude.ai export: it's grouped in the page and merged into the seed brain.
 await writeFile(out + "claude-export.json", JSON.stringify(makeExport()));
+await writeFile(out + "conversations-000.zip", makeZip([{ name: "conversations.json", text: JSON.stringify(makeExport()) }]));
 await scenario("import-export", { width: 1440, height: 900 }, [
   async (p) => {
     await p.click("#btnImport");
     // The wrong file from an export, and the zip itself, get a specific message, not a schema error.
-    for (const [name, body, want] of [["users.json", '[{"uuid":"u","full_name":"A","email_address":"a@b.c"}]', /users\.json/], ["export.zip", "PK\u0003\u0004rest", /Unzip it first/]]) {
+    const manifest = JSON.stringify({ version: "1.0", data_files: [{ category: "conversations", filename: "conversations-000.zip", export_url: "https://claude.ai/export/x/download/y" }] });
+    for (const [name, body, want] of [["users.json", '[{"uuid":"u","full_name":"A","email_address":"a@b.c"}]', /users\.json/], ["broken.zip", "PK\u0003\u0004rest", /couldn’t be opened/], ["manifest.json", manifest, /export manifest/]]) {
       await p.setInputFiles("#file", { name, mimeType: "application/octet-stream", buffer: Buffer.from(body) });
       await p.waitForFunction((rx) => new RegExp(rx).test(document.getElementById("impMsg").textContent), want.source);
     }
-    await p.setInputFiles("#file", out + "claude-export.json");
+    const link = await p.getAttribute("#impMsg a", "href");
+    if (link !== "https://claude.ai/export/x/download/y") throw new Error(`manifest link was ${link}`);
+    await p.setInputFiles("#file", out + "conversations-000.zip");
+    await p.waitForFunction(() => /Grouped/.test(document.getElementById("impMsg").textContent));
   },
   async (p) => {
     const msg = await p.textContent("#impMsg"), banner = await p.textContent("#banner");

@@ -60,6 +60,7 @@ export const Importer = (() => {
     const keys = Object.keys((list ? first : data) || {}).slice(0, 8);
     const has = (...k) => k.some(x => keys.includes(x));
     const wrong = f => `This looks like ${f} from your export. Choose conversations.json from the same folder.`;
+    if (manifestOf(data)) return "This is the export manifest: it only lists download links. Download conversations-000.zip from it and choose that zip here.";
     if (list && !first) return "This file is an empty list. If it’s conversations.json, the export has no chats in it yet.";
     if (has("email_address", "full_name", "verified_phone_number")) return wrong("users.json");
     if (has("docs", "prompt_template", "is_starter_project")) return wrong("projects.json");
@@ -79,12 +80,89 @@ export const Importer = (() => {
         text: Array.isArray(m.content && m.content.parts) ? m.content.parts.filter(p => typeof p === "string").join("\n") : (m.content && typeof m.content.text === "string" ? m.content.text : "") }))
       .filter(m => m.text.trim()).sort((a, b) => a.t - b.t);
   }
+  /* ---------- 0. Files: zips from the export email, JSON, JSON Lines, the manifest ---------- */
+  // Newer claude.ai exports arrive as a manifest JSON listing one-time download links to several zips
+  // (conversations-000.zip, projects-000.zip, …). Returns the listed files, links checked to be claude.ai.
+  function manifestOf(data) {
+    const files = data && !Array.isArray(data) && Array.isArray(data.data_files) ? data.data_files : null;
+    if (!files || !files.some(f => f && f.export_url)) return null;
+    const safe = u => { try { const x = new URL(u); return x.protocol === "https:" && x.hostname === "claude.ai" && x.pathname.startsWith("/export/") ? x.href : null; } catch { return null; } };
+    return files.filter(f => f && typeof f === "object").map(f => ({ category: String(f.category || ""), filename: String(f.filename || "export.zip"), url: safe(f.export_url) }));
+  }
+  const isZip = u8 => u8.length > 3 && u8[0] === 0x50 && u8[1] === 0x4b && u8[2] === 3 && u8[3] === 4;
+  const ZIP_HELP = "That zip couldn’t be opened here. Unzip it yourself, then choose the conversations .json file inside.";
+  // Minimal zip reader (stored + deflate) on the platform's DecompressionStream: no dependencies, same code in the browser and Node.
+  function zipEntries(u8) {
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error(ZIP_HELP);
+    const count = dv.getUint16(eocd + 10, true), out = [];
+    let p = dv.getUint32(eocd + 16, true);
+    if (p === 0xffffffff || count === 0xffff) throw new Error(ZIP_HELP);
+    for (let k = 0; k < count && p + 46 <= u8.length && dv.getUint32(p, true) === 0x02014b50; k++) {
+      const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true), nameLen = dv.getUint16(p + 28, true), local = dv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nameLen));
+      p += 46 + nameLen + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+      if (name.endsWith("/")) continue;
+      if (size === 0xffffffff || local === 0xffffffff) throw new Error(ZIP_HELP);
+      const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+      out.push({ name, method, data: u8.subarray(start, start + size) });
+    }
+    return out;
+  }
+  async function entryText(e) {
+    if (e.method === 0) return new TextDecoder().decode(e.data);
+    if (e.method !== 8 || typeof DecompressionStream === "undefined") throw new Error(ZIP_HELP);
+    return new Response(new Blob([e.data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+  }
+  // JSON, or JSON Lines (one conversation per line)
+  function parseText(text) {
+    try { return [JSON.parse(text)]; }
+    catch (e) {
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length > 1 && lines.every(l => /^\s*[[{]/.test(l))) return lines.map(l => JSON.parse(l));
+      throw e;
+    }
+  }
+  // Everything the person chose, in one pass: conversations.json, the export zips (no need to unzip),
+  // several files at once, or JSON Lines. files = [{ name, bytes: Uint8Array }].
+  // → { conversations, kind } | { manifest } | { data } (a single other JSON, e.g. a brain.json)
+  async function readExport(files) {
+    const docs = [];
+    for (const f of files) {
+      if (!isZip(f.bytes)) { docs.push({ name: f.name, values: parseText(new TextDecoder().decode(f.bytes)) }); continue; }
+      const entries = zipEntries(f.bytes).filter(e => /\.jsonl?$/i.test(e.name) && !/(^|\/)(__MACOSX|\.)/.test(e.name));
+      if (!entries.length) throw new Error(`${f.name} has no JSON files inside. Choose conversations-000.zip from the export email.`);
+      for (const e of entries) docs.push({ name: e.name, values: parseText(await entryText(e)) });
+    }
+    // The same chat can appear in more than one file (a metadata copy and the full one): keep the fuller copy.
+    const conversations = [], at = new Map(), size = c => (claudeMsgs(c) || Object.keys(c.mapping || {})).length;
+    let kind = null;
+    const take = c => {
+      const k = kindOf(c), id = k && (c.uuid || c.id || c.conversation_id);
+      if (!k) return;
+      kind = kind || k;
+      if (id && at.has(id)) { const i = at.get(id); if (size(c) > size(conversations[i])) conversations[i] = c; return; }
+      if (id) at.set(id, conversations.length);
+      conversations.push(c);
+    };
+    for (const d of docs) for (const v of d.values) kindOf(v) ? take(v) : (listOf(v) || []).forEach(take);
+    if (conversations.length) return { conversations, kind };
+    const values = docs.flatMap(d => d.values), manifest = values.map(manifestOf).find(Boolean);
+    if (manifest) return { manifest };
+    if (files.some(f => isZip(f.bytes))) throw new Error(`No conversations in ${files.length === 1 ? files[0].name : "these files"}. Your chats are in conversations-000.zip (and -001, -002… if there are more parts).`);
+    if (values.length === 1) return { data: values[0] };
+    throw new Error(describe(values[0]));
+  }
+
   function parseExport(data) {
-    const list = listOf(data), kind = exportKind(data);
-    if (!list || !kind) throw new Error(describe(data));
+    const list = listOf(data);
+    if (!list || !exportKind(data)) throw new Error(describe(data));
     const out = [];
     list.forEach((c, i) => {
-      if (!c || typeof c !== "object") return;
+      const kind = kindOf(c);
+      if (!kind) return;
       let msgs, created, updated, name;
       if (kind === "claude") {
         const cm = claudeMsgs(c);
@@ -326,5 +404,5 @@ export const Importer = (() => {
       stats: { conversations: convs.length, topics: neurons.length, ...stats } };
   }
 
-  return { isClaudeExport, exportKind, describe, parseExport, vectorize, cluster, toNeurons, merge, expand, fromExport, clip, slug, iso };
+  return { isClaudeExport, exportKind, describe, manifestOf, readExport, parseExport, vectorize, cluster, toNeurons, merge, expand, fromExport, clip, slug, iso };
 })();
