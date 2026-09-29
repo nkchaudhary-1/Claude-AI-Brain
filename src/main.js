@@ -1038,17 +1038,28 @@ async function adoptLocal(){const lb=localBrain();if(!lb)return;stage(null);open
   if(APP.base.length)dropS("data")}
 
 /* connected AI: honest about what each provider allows */
+// Step-by-step, per provider: [title, detail]. Static copy, so the detail may carry <code>.
 const GUIDE={
-  claude:{label:"Claude",steps:["claude.ai → Settings → Privacy → Export data","From the email, download conversations-000.zip (if you get a manifest .json instead, choose it here and it shows the links)","Choose the zip here. No need to unzip"]},
-  chatgpt:{label:"ChatGPT",steps:["chatgpt.com → Settings → Data controls → Export data","Download the zip from the email","Choose the zip here. No need to unzip"]}};
+  claude:{label:"Claude",steps:[
+    ["Request your export","On claude.ai, open Settings → Privacy → Export data. Claude emails you when it’s ready."],
+    ["Download the file from the email","It’s a small manifest <code>.json</code> that lists your download links. Older exports send a zip instead: skip to step 4."],
+    ["Choose the manifest here","Use Choose export file below. A <b>Download conversations-000.zip</b> button appears. Stay signed in to claude.ai, and download it once: each link works only once."],
+    ["Choose conversations-000.zip","No need to unzip it. If there are several parts (-001, -002…), select them all together."],
+    ["Watch your Brain form","Chats are grouped into knowledge in this browser. New neurons are private. Import a newer export any time and nothing is duplicated."]]},
+  chatgpt:{label:"ChatGPT",steps:[
+    ["Request your export","On chatgpt.com, open Settings → Data controls → Export data, then confirm."],
+    ["Download the zip from the email","The link in OpenAI’s email expires, so download it soon."],
+    ["Choose the zip here","Use Choose export file below. No need to unzip it."],
+    ["Watch your Brain form","Chats are grouped into knowledge in this browser. New neurons are private. Import a newer export any time and nothing is duplicated."]]}};
+const steps=g=>`<ol class="how">${g.steps.map(([t,d])=>`<li><b>${t}</b><span>${d}</span></li>`).join("")}</ol>`;
 const ACCEPT=".json,.jsonl,.zip,application/json,application/zip";
 function openConnect(p){const g=GUIDE[p],src=APP.sources.find(s=>s.provider===p);
   $("connect").innerHTML=`<button class="ibtn x" data-act="close" aria-label="Close"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
     <p class="mono eyebrow">Connect ${g.label}</p><h2 id="connectTitle">Bring in your ${g.label} history.</h2>
-    <p class="sub">${g.label} doesn’t offer an official way for apps to read your conversations, so there’s no password to share and nothing to sign in to. Your data export is the supported route.</p>
-    <ol class="how">${g.steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ol>
+    <p class="sub">${g.label} has no official way for apps to read your chats, so there’s no password to share. Your data export is the supported route.</p>
+    ${steps(g)}
     ${src&&src.status==="connected"?`<p class="state mono"><i></i>Imported · last import ${esc(Cloud.ago(src.last_synced_at))} · next: import a newer export</p>`:""}
-    <div class="row"><label class="cta mag" for="connectFile">Choose export file</label><input type="file" id="connectFile" accept="${ACCEPT}" multiple class="sr"></div>
+    <div class="row"><label class="cta" for="connectFile">Choose export file</label><input type="file" id="connectFile" accept="${ACCEPT}" multiple class="sr"></div>
     <p class="msg" id="connectMsg" role="status" aria-live="polite"></p>
     <p class="fine">Grouped in your browser. Full conversations never leave this device; only the knowledge they form is saved to your Brain.</p>`;
   $("connectFile").addEventListener("change",e=>{readFiles(e.target.files,{msg:$("connectMsg"),close:()=>stage(null)});e.target.value=""});stage("connect")}

@@ -69,6 +69,22 @@ Every table has RLS enabled and no access for `anon`. `profiles` and `brains` ma
 
 ---
 
+## Import your history
+
+**Claude**
+1. **Request your export.** On claude.ai, open Settings → Privacy → Export data. Claude emails you when it’s ready.
+2. **Download the file from the email.** It’s a small manifest `.json` that lists your download links. (Older exports send one zip instead: skip to step 4.)
+3. **Choose the manifest in the app.** Open Connect Claude → Choose export file. A **Download conversations-000.zip** button appears. Stay signed in to claude.ai, and download it once: each link works only once.
+4. **Choose `conversations-000.zip`.** No need to unzip it. If there are several parts (`-001`, `-002`…), select them all together.
+5. **Watch your Brain form.** Chats are grouped into knowledge in your browser; only that knowledge is saved to your account. New neurons are private. Import a newer export any time and nothing is duplicated.
+
+**ChatGPT**
+1. On chatgpt.com, open Settings → Data controls → Export data, then confirm.
+2. Download the zip from OpenAI’s email soon, because the link expires.
+3. Open Connect ChatGPT → Choose export file → choose the zip. No need to unzip it.
+
+**From the command line** (adds the optional Claude pass for what you learned and built): `npm run import -- ~/Downloads/conversations-000.zip [--llm]`, then Import → choose `data/brain.json`.
+
 ## DEPLOY TO VERCEL
 
 You need a GitHub, a Supabase and a Vercel account, plus Google Cloud and GitHub for the OAuth apps. All of it works on free tiers.

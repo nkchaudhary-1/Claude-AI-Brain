@@ -87,6 +87,14 @@
       <input id="file" type="file" accept=".json,.jsonl,.zip,application/json,application/zip" multiple class="sr">
     </label>
     <div class="msg" id="impMsg" role="status" aria-live="polite"></div>
+    <details class="steps" open><summary>How to get your Claude export</summary>
+      <ol class="how">
+        <li><b>Request your export</b><span>On claude.ai, open Settings → Privacy → Export data. Claude emails you when it’s ready.</span></li>
+        <li><b>Download the file from the email</b><span>It’s a small manifest <code>.json</code> that lists your download links. Older exports send a zip instead: skip to step 4.</span></li>
+        <li><b>Choose the manifest above</b><span>A <b>Download conversations-000.zip</b> button appears. Stay signed in to claude.ai, and download it once: each link works only once.</span></li>
+        <li><b>Choose conversations-000.zip</b><span>No need to unzip it. If there are several parts (-001, -002…), select them all together.</span></li>
+      </ol>
+    </details>
     <div class="pipe mono"><span>Conversations</span><i>→</i><span>Topics</span><i>→</i><span>Knowledge</span><i>→</i><span>Neurons</span><i>→</i><span>Connections</span></div>
     <p>Chats are grouped into knowledge first, so fifty conversations about Figma become one Figma neuron with its own connections. Here, grouping goes by shared topics. For what you learned, built and concluded in each, run the Claude pass from the project: <code>npm run import -- conversations-000.zip --llm</code></p>
     <p>The seed brain comes from my project notes, and conversation titles are descriptive until the real export lands. The fine lines and particles are structure, shaped by how active each area is; only the bright nodes are knowledge.</p>
@@ -118,7 +126,7 @@
 <section class="stage landing" id="landing" hidden aria-labelledby="landingTitle">
   <p class="mono eyebrow">My AI Brain</p>
   <h1 id="landingTitle">A visual map of everything you discover with AI.</h1>
-  <div class="row"><button class="cta mag" id="landingBuild">Build My AI Brain</button><button class="ghost mag" id="landingDemo">Explore the demo</button></div>
+  <div class="row"><button class="cta" id="landingBuild">Build My AI Brain</button><button class="ghost" id="landingDemo">Explore the demo</button></div>
   <p class="fine">Private to your account. Only what you choose to bring in.</p>
 </section>
 
@@ -144,11 +152,11 @@
   <h2 id="welcomeTitle">Welcome to your Brain.</h2>
   <p class="sub" id="welcomeSub">Connect the AI tools you use and turn your conversations into a living knowledge network.</p>
   <div class="choices">
-    <button class="mag" data-act="connect-claude"><b>Connect Claude</b><span>Bring in your claude.ai export</span></button>
-    <button class="mag" data-act="connect-chatgpt"><b>Connect ChatGPT</b><span>Bring in your ChatGPT export</span></button>
-    <button class="mag" data-act="import"><b>Import Data</b><span>A brain.json or any AI export</span></button>
-    <button class="mag" data-act="adopt" hidden><b>Keep this browser’s brain</b><span></span></button>
-    <button class="mag" data-act="demo"><b>Explore Demo Brain</b><span>See a formed brain first</span></button>
+    <button data-act="connect-claude"><b>Connect Claude</b><span>Bring in your claude.ai export</span></button>
+    <button data-act="connect-chatgpt"><b>Connect ChatGPT</b><span>Bring in your ChatGPT export</span></button>
+    <button data-act="import"><b>Import Data</b><span>A brain.json or any AI export</span></button>
+    <button data-act="adopt" hidden><b>Keep this browser’s brain</b><span></span></button>
+    <button data-act="demo"><b>Explore Demo Brain</b><span>See a formed brain first</span></button>
   </div>
 </section>
 
