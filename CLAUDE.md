@@ -11,7 +11,7 @@ A living spatial knowledge network of everything Neelesh has explored, learned a
 
 ```bash
 npm run dev          # http://localhost:5173: source + /api functions (reads .env.local; no env = local mode)
-npm run build        # → dist/ (hosted app, public seed, hashed assets) + dist-artifact/artifact.html (claude.ai, full seed)
+npm run build        # → dist/ (hosted app, demo brain, hashed assets) + dist-artifact/artifact.html (claude.ai, personal seed)
 npm run start        # serves dist/ + /api with vercel.json's headers and CSP
 npm run import -- <conversations-000.zip | conversations.json | folder> [--llm]   # → data/brain.json (see Importer)
 npm test             # importer unit tests, RLS tests (PGlite), headless Chromium smoke test → tests/output/*.png
@@ -31,7 +31,8 @@ Two modes, chosen by `<meta name="brain-mode">`: **app** (hosted: accounts via `
 ```
 index.html          markup only; loads src/styles.css and src/main.js as an ES module
 src/styles.css      all styles; tokens on :root; single dark world (no light theme by design)
-src/data/seed.js    CONV (conversation table), SEED (neurons), EDGES (connection list)
+src/data/seed.js    CONV (conversation table), SEED (neurons), EDGES (connection list). Personal: artifact + dev only
+src/data/demo.js    DEMO: general-knowledge brain (concepts, no people/chats) for the hosted landing, guest and demo
 src/cloud.js        Cloud: fetch wrappers for /api + toVisual() (Brain model → renderer) + changedNeurons() + sync()
 src/importer/core.js  Importer: parse export → vocabulary vectors → clusters → neurons → merge. Pure JS,
                     shared by the page and the CLI; one top-level name because the build concatenates
@@ -51,7 +52,7 @@ src/main.js         everything else, in this order:
 api/                Vercel functions; api/_lib is shared (never routed). See README → Architecture.
 supabase/           migrations (schema + RLS + signup trigger), config.toml, magic-link template
 scripts/serve.mjs   dev/start server: static + /api handlers, .env.local, vercel.json headers in --dist
-scripts/build.mjs   dist/ (public seed only; fails if private seed text leaks) + dist-artifact/artifact.html
+scripts/build.mjs   dist/ (demo brain; fails if any personal seed text leaks) + dist-artifact/artifact.html (personal seed)
 scripts/import.mjs  CLI: export → data/brain.json, offline or with the Claude pass
 scripts/importer/llm.mjs  the Claude pass (@anthropic-ai/sdk, dev dependency, loaded only with --llm)
 tests/importer.mjs  importer unit tests (grouping, privacy, merge, idempotency, Claude-pass validation, 3k perf)
@@ -111,7 +112,7 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input comes 
 - **Never invent data.** No made-up metrics, projects, clients or conversations. Counts on screen are computed from the data. The reference board's "1,284 nodes" is decoration. The same rule applies to the portfolio at neelesh.one.
 - **Client confidentiality.** The Gold Investment app is client work. It and anything derived from it (SIP autonomy dial, the component library) stay `visibility:"private"`. Public view must never show them.
 - **Private first.** The Private view is the default. Public is a curated subset. Anything imported without an explicit visibility is stored private.
-- **The public bundle never contains private seed data.** `scripts/build.mjs` strips it and fails the build on a leak. Keep it that way.
+- **The hosted site never contains personal seed data, public or private.** It uses `src/data/demo.js` (general knowledge). `scripts/build.mjs` fails if any seed title, description, list item or conversation text reaches the bundle, and strips `<p class="local-only">` notes from the public page. A visitor’s import on the hosted site starts from their own data, never the demo (`importBase()`).
 - **Honest providers.** Don't add fake "connect" or "sync" for Claude/ChatGPT. Export → import until an official mechanism exists.
 - Conversation titles in the seed are descriptive labels, not real chat titles. Replace them when the export is imported.
 - Neurons are grouped knowledge. Never draw one neuron per conversation.
@@ -139,12 +140,13 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input comes 
 | 18 | Auth sessions in httpOnly cookies via @supabase/ssr on the server; no Supabase client in the browser | No tokens reachable from page JS; every query runs as the user under RLS | Realtime needed in the browser |
 | 19 | No service-role key | Nothing needs to bypass RLS; one less secret | Account deletion or scheduled sync |
 | 20 | Grouping runs in the browser; only derived knowledge is uploaded | Privacy, and exports can exceed Vercel's 4.5 MB body limit | — |
+| 21 | Hosted demo = a general-knowledge brain, not the public part of the personal seed | The remaining public nodes were still Neelesh’s real projects; a concept brain is useful to read and personal to no one | Public view launches on neelesh.one |
 | 16 | Emerging layer = exploring / experimenting / in-progress and updated in the last 30 days | Honest, data-derived stand-in for "emerging intelligence" | The Claude insight pass lands |
 
 ## Deviations from the art direction
 - Real counts, not the brief's numbers. "Hundreds of nodes per cluster" comes from structure particles; only the bright nodes are knowledge.
 - Zoom levels (Universe → Cluster → Knowledge → Detail) are driven by camera distance and shown bottom right, not as separate screens.
-- Radial menus aren't built. Controls are compact floating pills with magnetic hover.
+- Radial menus aren't built. Controls are compact floating pills (no magnetic hover: removed at the user’s request, it made rows and pills drift).
 - The panel stays a right-side card on desktop (bottom sheet on phones). It grows out of the neuron rather than slides in.
 
 ## Roadmap

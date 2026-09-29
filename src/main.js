@@ -608,7 +608,7 @@ canvas.addEventListener("pointerdown",e=>{canvas.setPointerCapture(e.pointerId);
   if(pointers.size===1)drag={x:e.clientX,y:e.clientY,moved:false,type:e.pointerType};
   if(pointers.size===2){const[a,b]=[...pointers.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),r:cam.r};if(drag)drag.moved=true}
   lastInteract=performance.now();hideHint();skipIntro()});
-addEventListener("pointermove",e=>{if(e.pointerType==="mouse"){par.tx=e.clientX/innerWidth-.5;par.ty=e.clientY/innerHeight-.5;magnet(e)}});
+addEventListener("pointermove",e=>{if(e.pointerType==="mouse"){par.tx=e.clientX/innerWidth-.5;par.ty=e.clientY/innerHeight-.5}});
 canvas.addEventListener("pointermove",e=>{
   if(pointers.has(e.pointerId)){pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pinch&&pointers.size===2){const[a,b]=[...pointers.values()];cam.r=clampR(pinch.r*pinch.d/Math.max(Math.hypot(a.x-b.x,a.y-b.y),1));tween=null;introCam=false}
@@ -627,12 +627,6 @@ function setHover(i,x,y){
     else tip.classList.remove("on")}
   if(i>=0&&x!=null){const tx=Math.min(x+22,W-276),ty=Math.min(y+22,H-tip.offsetHeight-12);tip.style.transform=`translate(${tx}px,${ty}px)`}
 }
-// Magnetic controls: buttons lean towards the cursor when it comes close.
-const MAGS=()=>document.querySelectorAll(".mag");
-function magnet(e){if(matchMedia("(pointer:coarse)").matches||REDUCED)return;MAGS().forEach(el=>{const r=el.getBoundingClientRect();if(!r.width)return;
-  const dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),R=Math.max(r.width,r.height)*.85;
-  el.style.translate=Math.hypot(dx,dy)<R?`${(dx*.18).toFixed(1)}px ${(dy*.18).toFixed(1)}px`:""})}
-
 /* detail: entering a memory */
 const panel=document.getElementById("panel"),pBody=document.getElementById("pBody"),ctxEl=document.getElementById("ctx");
 let lastFocus=null,tab="overview",openTimer=0;
@@ -755,12 +749,12 @@ q.addEventListener("focus",()=>{if(q.value.trim())renderResults()});
 /* filters */
 const nav=document.getElementById("nav");
 function renderNav(){const c={};G.neurons.forEach((n,i)=>{if(S.view==="private"||n.visibility!=="private")c[n.region]=(c[n.region]||0)+1});
-  nav.innerHTML=[["all","All"],...RKEYS.map(k=>[k,REGIONS[k].label])].map(([k,l])=>`<button class="mag" data-r="${k}" aria-pressed="${S.region===k}" style="--c:${k==="all"?"#dfe7f2":REGIONS[k].color}"><i></i>${l}<span>${k==="all"?"":String(c[k]||0).padStart(2,"0")}</span></button>`).join("")}
+  nav.innerHTML=[["all","All"],...RKEYS.map(k=>[k,REGIONS[k].label])].map(([k,l])=>`<button data-r="${k}" aria-pressed="${S.region===k}" style="--c:${k==="all"?"#dfe7f2":REGIONS[k].color}"><i></i>${l}<span>${k==="all"?"":String(c[k]||0).padStart(2,"0")}</span></button>`).join("")}
 nav.addEventListener("click",e=>{const b=e.target.closest("[data-r]");if(b){if(S.sel>=0)closePanel();clearFocus();setRegion(b.dataset.r)}});
 
 /* states */
 const statesEl=document.getElementById("states");
-function renderStates(){statesEl.innerHTML=STATES.map(s=>`<button class="mag" role="radio" data-s="${s.k}" aria-checked="${S.state===s.k}" title="${s.label} · ${s.n.slice(1)}"><span class="n mono">${s.n}</span><span class="l">${s.label}</span><span class="sl">${s.short}</span></button>`).join("");document.body.dataset.state=S.state}
+function renderStates(){statesEl.innerHTML=STATES.map(s=>`<button role="radio" data-s="${s.k}" aria-checked="${S.state===s.k}" title="${s.label} · ${s.n.slice(1)}"><span class="n mono">${s.n}</span><span class="l">${s.label}</span><span class="sl">${s.short}</span></button>`).join("");document.body.dataset.state=S.state}
 statesEl.addEventListener("click",e=>{const b=e.target.closest("[data-s]");if(b)setState(b.dataset.s)});
 
 /* time: the brain as it stood on any day */
@@ -920,7 +914,7 @@ function synthetic(N){const r=rng(99),neurons=[],ds=["design","ai","product","de
 function setBanner(text,btn,fn){if(!text){banner.hidden=true;banner.innerHTML="";return}
   banner.hidden=false;banner.innerHTML=`<span>${esc(text)}</span>${btn?`<button class="vbtn" id="bAct">${esc(btn)}</button>`:""}`;if(btn)document.getElementById("bAct").onclick=fn}
 function localBanner(){if(APP.mode==="guest")setBanner("This brain lives in this browser","Save it to an account",()=>openAuth());
-  else setBanner("Showing imported data","Back to seed brain",()=>{dropS("data");load(SEED);setBanner(null)})}
+  else setBanner("Showing imported data",`Back to ${SEED_NAME()}`,()=>{dropS("data");load(SEED);setBanner(null)})}
 
 // how: "boot" plays the whole intro; "forming" grows the structure while data loads;
 // "continue" carries on from forming; anything else regrows the knowledge in place.
@@ -954,7 +948,9 @@ const APP={mode:"local",user:null,brain:null,profile:null,base:[],sources:[],his
 const $=id=>document.getElementById(id);
 const tick=ms=>new Promise(r=>setTimeout(r,ms));
 const ownBrain=()=>APP.mode==="user"&&!APP.demo;
-function importBase(){if(ownBrain())return APP.base;const l=localBrain();return l?l.neurons:SEED.neurons}
+// The hosted app never merges a visitor's import into the demo brain: it starts from their own data only.
+function importBase(){if(ownBrain())return APP.base;const l=localBrain();return l?l.neurons:MODE==="app"?[]:SEED.neurons}
+const SEED_NAME=()=>MODE==="app"?"demo brain":"seed brain";
 function localBrain(){const s=readS("data");if(!s)return null;try{const b=JSON.parse(s);const l=Array.isArray(b)?b:b&&b.neurons;return Array.isArray(l)&&l.length?{neurons:l}:null}catch(e){return null}}
 const STAGES=["loading","landing","auth","welcome","connect","errorState"];
 function stage(id){STAGES.forEach(s=>{$(s).hidden=s!==id});document.body.classList.toggle("staged",!!id);
@@ -1068,8 +1064,8 @@ $("connect").addEventListener("click",e=>{if(e.target.closest('[data-act="close"
 /* account */
 const btnAccount=$("btnAccount"),accountEl=$("account");
 function renderAccountBtn(){btnAccount.hidden=APP.mode==="local";
-  if(APP.mode==="guest"){btnAccount.className="vbtn mag acct";btnAccount.innerHTML=`<span>Sign in</span>`;btnAccount.setAttribute("aria-label","Sign in")}
-  else if(APP.user){const u=APP.user;btnAccount.className="ibtn mag acct";btnAccount.setAttribute("aria-label",`Account: ${u.name}`);
+  if(APP.mode==="guest"){btnAccount.className="vbtn acct";btnAccount.innerHTML=`<span>Sign in</span>`;btnAccount.setAttribute("aria-label","Sign in")}
+  else if(APP.user){const u=APP.user;btnAccount.className="ibtn acct";btnAccount.setAttribute("aria-label",`Account: ${u.name}`);
     btnAccount.innerHTML=u.avatar?`<img src="${esc(u.avatar)}" alt="" referrerpolicy="no-referrer">`:`<span>${esc((u.name||"?").trim().charAt(0).toUpperCase())}</span>`}}
 btnAccount.addEventListener("click",()=>{if(APP.mode==="guest")return openAuth();if(accountEl.hidden){renderAccount();accountEl.hidden=false;closeDrawer()}else closeAccount()});
 function closeAccount(){accountEl.hidden=true}
@@ -1106,6 +1102,7 @@ document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!accountEl
   if(!REDUCED)document.body.classList.add("intro");else document.body.classList.remove("intro");
   if(readS("view")==="public")S.view="public";const st=readS("state");if(SKEYS.includes(st))S.state=st;
   const m=location.hash.match(/^#(flow|orb|layers|galaxy|engine)$/);if(m)S.state=m[1];
-  if(MODE==="app"){document.querySelector(".brand p").textContent="Everything I’ve explored, learned and built with AI.";bootApp()}else bootLocal("boot");
+  if(MODE==="app"){document.body.classList.add("app");document.querySelector(".brand p").textContent="Everything I’ve explored, learned and built with AI.";
+    $("restoreSeed").textContent="Load demo brain";$("emptySeed").textContent="Explore demo brain";bootApp()}else bootLocal("boot");
   requestAnimationFrame(frame);
 })();

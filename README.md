@@ -135,7 +135,7 @@ Authentication → Emails → **Magic Link**: set the subject to “Your MY AI B
 | `SITE_URL` | `https://<your-project>.vercel.app` | used for OAuth and email redirects |
 Don’t add a service-role key. Nothing here needs one.
 
-**STEP 14 — Deploy.** Deploy, and wait for the build log to print `Built dist/ (… public seed …)`.
+**STEP 14 — Deploy.** Deploy, and wait for the build log to print `Built dist/ (… demo brain …)`.
 
 **STEP 15 — Production URLs.** If the final domain differs from the one used above, update Supabase Site URL and Redirect URLs, the Google and GitHub OAuth app URLs, and `SITE_URL` in Vercel. Then redeploy.
 

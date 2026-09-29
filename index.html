@@ -36,11 +36,11 @@
       </label>
       <div class="results" id="results" role="listbox" hidden></div>
     </div>
-    <button class="ibtn mag" id="btnTime" aria-label="Time" title="Time"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
-    <button class="ibtn mag" id="btnInsights" aria-pressed="false" aria-label="Insights" title="Insights"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.5 4 4 1.5-4 1.5L8 12.5 6.5 8.5l-4-1.5 4-1.5L8 1.5z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg></button>
-    <button class="ibtn mag" id="btnImport" aria-label="Import Claude data" title="Import Claude data"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <button class="vbtn mag" id="btnView" title="Private shows everything. Public hides client and personal work."></button>
-    <button class="vbtn mag acct" id="btnAccount" hidden aria-haspopup="dialog"></button>
+    <button class="ibtn" id="btnTime" aria-label="Time" title="Time"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+    <button class="ibtn" id="btnInsights" aria-pressed="false" aria-label="Insights" title="Insights"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.5 4 4 1.5-4 1.5L8 12.5 6.5 8.5l-4-1.5 4-1.5L8 1.5z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg></button>
+    <button class="ibtn" id="btnImport" aria-label="Import Claude data" title="Import Claude data"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button class="vbtn" id="btnView" title="Private shows everything. Public hides client and personal work."></button>
+    <button class="vbtn acct" id="btnAccount" hidden aria-haspopup="dialog"></button>
   </div>
 </header>
 
@@ -56,9 +56,9 @@
 
 <div class="zoom ui fade" id="zoom" style="--d:5">
   <span class="lvl mono" id="lvl"></span>
-  <button class="ibtn mag" id="zout" aria-label="Zoom out"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
-  <button class="ibtn mag" id="zin" aria-label="Zoom in"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
-  <button class="orb mag" id="orb" aria-label="Show the whole brain"></button>
+  <button class="ibtn" id="zout" aria-label="Zoom out"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+  <button class="ibtn" id="zin" aria-label="Zoom in"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+  <button class="orb" id="orb" aria-label="Show the whole brain"></button>
 </div>
 <div class="hint mono ui" id="hint" style="--d:6">Drag to orbit · Scroll to zoom · Click a neuron · 1–5 change view</div>
 
@@ -96,13 +96,14 @@
       </ol>
     </details>
     <div class="pipe mono"><span>Conversations</span><i>→</i><span>Topics</span><i>→</i><span>Knowledge</span><i>→</i><span>Neurons</span><i>→</i><span>Connections</span></div>
-    <p>Chats are grouped into knowledge first, so fifty conversations about Figma become one Figma neuron with its own connections. Here, grouping goes by shared topics. For what you learned, built and concluded in each, run the Claude pass from the project: <code>npm run import -- conversations-000.zip --llm</code></p>
-    <p>The seed brain comes from my project notes, and conversation titles are descriptive until the real export lands. The fine lines and particles are structure, shaped by how active each area is; only the bright nodes are knowledge.</p>
+    <p>Chats are grouped into knowledge first, so fifty conversations about Figma become one Figma neuron with its own connections. Here, grouping goes by shared topics.</p>
+    <p class="local-only">For what you learned, built and concluded in each, run the Claude pass from the project: <code>npm run import -- conversations-000.zip --llm</code></p>
+    <p class="local-only">The seed brain comes from my project notes, and conversation titles are descriptive until the real export lands. The fine lines and particles are structure, shaped by how active each area is; only the bright nodes are knowledge.</p>
     <div class="links">
       <button class="lbtn" id="copyJson">Copy data as JSON</button>
       <button class="lbtn" id="restoreSeed">Restore seed brain</button>
-      <button class="lbtn" id="showEmpty">Preview empty state</button>
-      <button class="lbtn" id="stress">Stress test · 3,000 neurons</button>
+      <button class="lbtn local-only" id="showEmpty">Preview empty state</button>
+      <button class="lbtn local-only" id="stress">Stress test · 3,000 neurons</button>
     </div>
     <div id="copyArea"></div>
     <details><summary>Neuron schema</summary><pre id="schema"></pre></details>

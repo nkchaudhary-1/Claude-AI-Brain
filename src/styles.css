@@ -27,7 +27,7 @@ button{cursor:pointer;background:none;border:0;padding:0}
 #gl{touch-action:none;cursor:grab}
 #fx{pointer-events:none;z-index:2}
 #gl.dragging{cursor:grabbing}#gl.pointing{cursor:pointer}
-.mag{transition:translate .5s var(--spring),color .25s,border-color .25s,background .25s,opacity .3s}
+.ibtn,.vbtn,.chips button,.states button,.lbtn{transition:color .25s,border-color .25s,background .25s,opacity .3s}
 
 /* intro: the UI waits until the network has formed, then arrives in a stagger */
 .ui{transition:opacity .9s var(--out) calc(var(--d,0)*90ms),transform .9s var(--out) calc(var(--d,0)*90ms)}
@@ -376,6 +376,7 @@ body.staged .intro-cap{display:none}
 .how span{font-size:12.5px;line-height:1.55;color:var(--muted)}
 .how span b{font-size:inherit;line-height:inherit;color:var(--soft)}
 .how code{font:11px var(--font-mono);color:var(--soft);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+body.app .local-only{display:none}
 .steps{border-top:1px solid var(--line);padding-top:12px}
 .steps summary{cursor:pointer;color:var(--muted);font-size:12px;margin-bottom:14px}
 .state{margin:0;display:flex;align-items:center;gap:8px;color:var(--soft);font-size:9px}
@@ -387,6 +388,7 @@ body.staged .intro-cap{display:none}
 .acct img{width:100%;height:100%;object-fit:cover;border-radius:50%}
 .acct span{font:12px var(--font-mono);letter-spacing:.08em}
 .vbtn.acct{padding:0 14px}
+.vbtn{white-space:nowrap;flex:none}
 .account{position:fixed;top:calc(env(safe-area-inset-top,0px) + var(--edge) + 50px);right:var(--edge);z-index:8;width:min(380px,calc(100vw - 2*var(--edge)));max-height:calc(100vh - 110px);overflow:auto;box-sizing:border-box;padding:18px;display:grid;gap:18px;background:var(--glass-2);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 30px 80px rgba(0,0,0,.6);animation:rise .5s var(--out)}
 .account header{display:flex;align-items:center;gap:12px;padding-right:36px;position:relative}
 .account header .x{position:absolute;right:0;top:0;width:28px;height:28px}
