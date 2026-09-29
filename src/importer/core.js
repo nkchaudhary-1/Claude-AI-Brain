@@ -37,14 +37,34 @@ export const Importer = (() => {
   const count = (rx, s) => (s.match(rx) || []).length;
 
   /* ---------- 1. Conversations ---------- */
-  const listOf = data => Array.isArray(data) ? data : data && Array.isArray(data.conversations) ? data.conversations : null;
-  // "claude" (conversations.json from claude.ai), "chatgpt" (conversations.json from ChatGPT), or null
+  const claudeMsgs = c => Array.isArray(c.chat_messages) ? c.chat_messages : Array.isArray(c.messages) && c.messages.some(m => m && "sender" in m) ? c.messages : null;
+  const kindOf = c => !c || typeof c !== "object" ? null : claudeMsgs(c) ? "claude" : c.mapping && typeof c.mapping === "object" ? "chatgpt" : null;
+  // The conversation list: the file itself, its "conversations" array, or any top-level array of conversations.
+  function listOf(data) {
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== "object") return null;
+    if (Array.isArray(data.conversations)) return data.conversations;
+    return Object.values(data).find(v => Array.isArray(v) && v.slice(0, 50).some(kindOf)) || null;
+  }
+  // "claude" (conversations.json from claude.ai), "chatgpt" (conversations.json from ChatGPT), or null.
+  // Looks past the first few entries, since an export can start with an empty or unusual conversation.
   function exportKind(data) {
-    const list = listOf(data), first = list && list.find(c => c && typeof c === "object");
-    if (!first) return null;
-    if ("chat_messages" in first) return "claude";
-    if ("mapping" in first) return "chatgpt";
+    const list = listOf(data);
+    if (!list) return null;
+    for (const c of list.slice(0, 50)) { const k = kindOf(c); if (k) return k; }
     return null;
+  }
+  // A plain-language reason a file isn't an export, naming the sibling files people most often pick by mistake.
+  function describe(data) {
+    const list = Array.isArray(data) ? data : null, first = list && list.find(x => x && typeof x === "object");
+    const keys = Object.keys((list ? first : data) || {}).slice(0, 8);
+    const has = (...k) => k.some(x => keys.includes(x));
+    const wrong = f => `This looks like ${f} from your export. Choose conversations.json from the same folder.`;
+    if (list && !first) return "This file is an empty list. If it’s conversations.json, the export has no chats in it yet.";
+    if (has("email_address", "full_name", "verified_phone_number")) return wrong("users.json");
+    if (has("docs", "prompt_template", "is_starter_project")) return wrong("projects.json");
+    if (keys.some(k => /memor/i.test(k))) return wrong("memories.json");
+    return `This file isn’t a Claude or ChatGPT conversations.json, or a brain.json. An export folder holds several files; choose conversations.json.${keys.length ? ` (It contains: ${keys.join(", ")}.)` : ""}`;
   }
   const isClaudeExport = data => exportKind(data) !== null;
   function messageText(m) {
@@ -61,15 +81,16 @@ export const Importer = (() => {
   }
   function parseExport(data) {
     const list = listOf(data), kind = exportKind(data);
-    if (!list || !kind) throw new Error("No conversations found. Use conversations.json from a Claude or ChatGPT data export.");
+    if (!list || !kind) throw new Error(describe(data));
     const out = [];
     list.forEach((c, i) => {
       if (!c || typeof c !== "object") return;
       let msgs, created, updated, name;
       if (kind === "claude") {
-        if (!Array.isArray(c.chat_messages)) return;
-        msgs = c.chat_messages.map(m => ({ who: m.sender === "human" ? "human" : "assistant", text: messageText(m) })).filter(m => m.text.trim());
-        created = Date.parse(c.created_at || (c.chat_messages[0] && c.chat_messages[0].created_at) || ""); updated = Date.parse(c.updated_at || "") || created; name = c.name;
+        const cm = claudeMsgs(c);
+        if (!cm) return;
+        msgs = cm.map(m => ({ who: m.sender === "human" ? "human" : "assistant", text: messageText(m) })).filter(m => m.text.trim());
+        created = Date.parse(c.created_at || (cm[0] && cm[0].created_at) || ""); updated = Date.parse(c.updated_at || "") || created; name = c.name;
       } else {
         msgs = chatgptMessages(c);
         created = c.create_time ? c.create_time * 1000 : NaN; updated = c.update_time ? c.update_time * 1000 : created; name = c.title;
@@ -305,5 +326,5 @@ export const Importer = (() => {
       stats: { conversations: convs.length, topics: neurons.length, ...stats } };
   }
 
-  return { isClaudeExport, exportKind, parseExport, vectorize, cluster, toNeurons, merge, expand, fromExport, clip, slug, iso };
+  return { isClaudeExport, exportKind, describe, parseExport, vectorize, cluster, toNeurons, merge, expand, fromExport, clip, slug, iso };
 })();

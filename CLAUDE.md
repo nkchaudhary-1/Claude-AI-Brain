@@ -97,7 +97,7 @@ A neuron is authored in `src/data/seed.js` or imported as `brain.json` (schema i
 
 ## Importer
 
-Conversations → Topics → Knowledge → Neurons → Connections. Input is `conversations.json` from claude.ai → Settings → Privacy → Export data (unzip it first). ChatGPT exports are rejected with a clear message.
+Conversations → Topics → Knowledge → Neurons → Connections. Input is `conversations.json` from claude.ai → Settings → Privacy → Export data (unzip it first). ChatGPT `conversations.json` is parsed too. The wrong file (users.json, projects.json, memories.json, the zip) gets a message naming it (`Importer.describe`).
 
 **Two passes, one merge.**
 1. **Offline** (`Importer.fromExport`, in the page and the CLI). TF-IDF over titles (×3) and the person's own messages (code blocks stripped, first 4k chars), unigrams + bigrams. Greedy time-ordered clustering at cosine ≥ `threshold` (default 0.16), two refine passes, a union-find merge of near-identical topics, and one-offs folded in only when close. Labels are the terms most of a cluster's chats share and the rest of the history doesn't (`Auto Layout · Figma`). Type, domains and status come from keyword rules and recency; weight from chat count and turns. It never writes `learned`, `created` or `insights`. Those stay empty rather than guessed. About 2s for 3,000 varied conversations on the main thread.

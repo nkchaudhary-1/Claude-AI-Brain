@@ -32,7 +32,24 @@ test("reads a ChatGPT export: user and assistant turns in time order", () => {
   assert.equal(Importer.exportKind(data), "chatgpt");
   const [c] = Importer.parseExport(data);
   assert.deepEqual([c.id, c.title, c.date, c.turns, c.human, c.assistant], ["gpt-1", "Figma auto layout", "2025-10-09", 2, ["How does auto layout padding work?"], ["Use fixed padding."]]);
-  assert.throws(() => Importer.parseExport([{ foo: 1 }]), /No conversations found/);
+  assert.throws(() => Importer.parseExport([{ foo: 1 }]), /isn’t a Claude or ChatGPT conversations\.json/);
+});
+
+test("finds conversations past an unusual first entry or inside a wrapper object", () => {
+  const convs = makeExport();
+  assert.equal(Importer.exportKind([{ uuid: "stub" }, ...convs]), "claude");
+  assert.equal(Importer.parseExport([{ uuid: "stub" }, ...convs]).length, 25);
+  assert.equal(Importer.exportKind({ account: {}, data: convs }), "claude");
+  const alt = convs.map(({ chat_messages, ...c }) => ({ ...c, messages: chat_messages }));
+  assert.equal(Importer.parseExport(alt).length, 25);
+});
+
+test("names the wrong export file instead of a generic error", () => {
+  assert.match(Importer.describe([{ uuid: "u", full_name: "A", email_address: "a@b.c" }]), /users\.json/);
+  assert.match(Importer.describe([{ uuid: "p", name: "P", docs: [], prompt_template: "" }]), /projects\.json/);
+  assert.match(Importer.describe({ conversations_memory: "", project_memories: {} }), /memories\.json/);
+  assert.match(Importer.describe({ foo: 1, bar: 2 }), /It contains: foo, bar/);
+  assert.match(Importer.describe([]), /empty list/);
 });
 
 test("groups conversations into knowledge, not one neuron per chat", () => {

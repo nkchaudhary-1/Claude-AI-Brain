@@ -26,6 +26,7 @@ if (!input) fail("Pass the path to conversations.json (or the unzipped export fo
 let path = resolve(input);
 if ((await stat(path).catch(() => fail(`Not found: ${input}`))).isDirectory()) path = join(path, "conversations.json");
 let data;
+if (/\.zip$/i.test(path)) fail("That's the zipped export. Unzip it first, then pass conversations.json or the unzipped folder.");
 try { data = JSON.parse(await readFile(path, "utf8")); } catch (e) { fail(e instanceof SyntaxError ? `${path} isn't valid JSON.` : `Couldn't read ${path}.`); }
 
 const basePath = opt("--base", (await exists(out)) ? out : null);

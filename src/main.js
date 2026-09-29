@@ -863,8 +863,13 @@ fileIn.addEventListener("change",()=>{if(fileIn.files[0])readFile(fileIn.files[0
 addEventListener("drop",e=>{if(!e.dataTransfer||!e.dataTransfer.files.length)return;e.preventDefault();if(scrim.hidden)openImport();readFile(e.dataTransfer.files[0])});
 // Where an import lands: the account's Brain when signed in, otherwise this browser.
 const IMPORT_UI={msg:impMsg,close:closeImport};
-function readFile(f,ui=IMPORT_UI){const r=new FileReader();r.onload=()=>{try{const data=JSON.parse(r.result);
-    if(Importer.exportKind(data)||(Array.isArray(data)&&data[0]&&"mapping" in data[0])){importExport(data,ui);return}
+function readFile(f,ui=IMPORT_UI){const r=new FileReader();r.onload=()=>{try{
+    if(r.result.startsWith("PK\u0003\u0004"))throw new Error("That’s the zipped export. Unzip it first, then choose conversations.json from the folder.");
+    const data=JSON.parse(r.result);
+    if(Importer.exportKind(data)){importExport(data,ui);return}
+    // A brain.json is {neurons:[…]} or a list of titled neurons; anything else is the wrong file from an export.
+    const isBrain=data&&(Array.isArray(data.neurons)||Array.isArray(data)&&data.some(n=>n&&typeof n.title==="string"));
+    if(!isBrain)throw new Error(Importer.describe(data));
     const t=normalize(data);if(!t.neurons.length)throw new Error("The file has no neurons in it.");
     const list=Array.isArray(data)?data:data.neurons;
     if(ownBrain()){commitBrain({neurons:Importer.merge(APP.base,list,{conv:CONV}).neurons},"import",`Read ${t.neurons.length} neurons and ${t.edges.length} connections.`,ui);return}
