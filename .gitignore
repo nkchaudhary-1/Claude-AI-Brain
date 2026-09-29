@@ -21,3 +21,6 @@ conversations.json
 # Local Supabase CLI state
 supabase/.branches/
 supabase/.temp/
+
+# Launch videos (/brag)
+brag-output*/
