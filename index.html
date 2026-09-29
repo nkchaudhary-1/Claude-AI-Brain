@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>My AI Brain</title>
+<meta name="brain-mode" content="app">
+<meta name="description" content="A visual map of everything you discover with AI.">
+<meta name="theme-color" content="#000000">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500&family=Geist+Mono:wght@400;500&display=swap">
@@ -36,6 +39,7 @@
     <button class="ibtn mag" id="btnInsights" aria-pressed="false" aria-label="Insights" title="Insights"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.5 4 4 1.5-4 1.5L8 12.5 6.5 8.5l-4-1.5 4-1.5L8 1.5z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg></button>
     <button class="ibtn mag" id="btnImport" aria-label="Import Claude data" title="Import Claude data"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="vbtn mag" id="btnView" title="Private shows everything. Public hides client and personal work."></button>
+    <button class="vbtn mag acct" id="btnAccount" hidden aria-haspopup="dialog"></button>
   </div>
 </header>
 
@@ -103,6 +107,60 @@
 </div>
 
 <div class="banner" id="banner" hidden></div>
+
+<!-- Hosted app only: the brain keeps running behind every one of these stages. -->
+<div class="stage loading" id="loading" hidden aria-live="polite">
+  <p class="mono eyebrow">Initializing</p>
+  <ol class="steps mono" id="steps"><li>Loading identity</li><li>Loading knowledge</li><li>Reconstructing relationships</li><li>Connecting nodes</li><li>Brain ready</li></ol>
+</div>
+
+<section class="stage landing" id="landing" hidden aria-labelledby="landingTitle">
+  <p class="mono eyebrow">My AI Brain</p>
+  <h1 id="landingTitle">A visual map of everything you discover with AI.</h1>
+  <div class="row"><button class="cta mag" id="landingBuild">Build My AI Brain</button><button class="ghost mag" id="landingDemo">Explore the demo</button></div>
+  <p class="fine">Private to your account. Only what you choose to bring in.</p>
+</section>
+
+<section class="stage card" id="auth" hidden role="dialog" aria-modal="true" aria-labelledby="authTitle">
+  <button class="ibtn x" data-act="close" aria-label="Close"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+  <p class="mono eyebrow">My AI Brain</p>
+  <h2 id="authTitle">Your brain starts here.</h2>
+  <p class="sub">Create an account to save your AI knowledge and access your Brain from anywhere.</p>
+  <div class="auth-buttons">
+    <a class="abtn" href="/api/auth/signin?provider=google"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.35 11.1H12v2.98h5.35c-.23 1.4-1.66 4.1-5.35 4.1a5.9 5.9 0 010-11.8c1.84 0 3.07.78 3.78 1.46l2.58-2.49C16.8 3.9 14.6 3 12 3a9 9 0 100 18c5.2 0 8.64-3.65 8.64-8.8 0-.6-.07-1.05-.15-1.5z"/></svg>Continue with Google</a>
+    <a class="abtn" href="/api/auth/signin?provider=github"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 00-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.1-1.46-1.1-1.46-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 015 0c1.91-1.3 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0012 2z"/></svg>Continue with GitHub</a>
+    <div class="or mono" aria-hidden="true"><span>or</span></div>
+    <button class="abtn" id="authEmailBtn"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="3.5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 4.5L8 9l5.5-4.5" stroke="currentColor" stroke-width="1.2"/></svg>Continue with Email</button>
+    <form class="email" id="authEmail" hidden novalidate><input type="email" id="authEmailIn" required autocomplete="email" inputmode="email" placeholder="you@example.com" aria-label="Email address"><button class="cta" type="submit">Send link</button></form>
+    <p class="msg" id="authMsg" role="status" aria-live="polite"></p>
+  </div>
+  <p class="fine">Your Brain is private to your account. MY AI BRAIN only processes data you explicitly provide or authorize.</p>
+</section>
+
+<section class="stage card" id="welcome" hidden aria-labelledby="welcomeTitle">
+  <button class="ibtn x" data-act="close" aria-label="Not now"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+  <p class="mono eyebrow">My AI Brain</p>
+  <h2 id="welcomeTitle">Welcome to your Brain.</h2>
+  <p class="sub" id="welcomeSub">Connect the AI tools you use and turn your conversations into a living knowledge network.</p>
+  <div class="choices">
+    <button class="mag" data-act="connect-claude"><b>Connect Claude</b><span>Bring in your claude.ai export</span></button>
+    <button class="mag" data-act="connect-chatgpt"><b>Connect ChatGPT</b><span>Bring in your ChatGPT export</span></button>
+    <button class="mag" data-act="import"><b>Import Data</b><span>A brain.json or any AI export</span></button>
+    <button class="mag" data-act="adopt" hidden><b>Keep this browser’s brain</b><span></span></button>
+    <button class="mag" data-act="demo"><b>Explore Demo Brain</b><span>See a formed brain first</span></button>
+  </div>
+</section>
+
+<section class="stage card" id="connect" hidden role="dialog" aria-modal="true" aria-labelledby="connectTitle"></section>
+
+<section class="stage card" id="errorState" hidden role="alert">
+  <p class="mono eyebrow">My AI Brain</p>
+  <h2 id="errTitle">Your Brain couldn’t be loaded.</h2>
+  <p class="sub" id="errBody">Your existing knowledge is safe. Try again in a moment.</p>
+  <div class="row"><button class="cta" id="errRetry">Try again</button></div>
+</section>
+
+<aside class="account" id="account" hidden aria-label="Account"></aside>
 
 <script type="module" src="src/main.js"></script>
 </body>

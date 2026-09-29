@@ -1,5 +1,6 @@
 import { CONV, SEED } from "./data/seed.js";
 import { Importer } from "./importer/core.js";
+import { Cloud } from "./cloud.js";
 
 /* =========================================================================
    MODEL
@@ -845,10 +846,10 @@ function closeImport(){scrim.hidden=true}
 document.getElementById("btnImport").addEventListener("click",openImport);document.getElementById("impClose").addEventListener("click",closeImport);
 scrim.addEventListener("click",e=>{if(e.target===scrim)closeImport()});
 document.getElementById("emptyImport").addEventListener("click",openImport);
-document.getElementById("emptySeed").addEventListener("click",()=>{dropS("data");load(SEED,"seed")});
-document.getElementById("restoreSeed").addEventListener("click",()=>{dropS("data");load(SEED,"seed");closeImport()});
-document.getElementById("showEmpty").addEventListener("click",()=>{load({neurons:[]},"empty");closeImport()});
-document.getElementById("stress").addEventListener("click",()=>{load(synthetic(3000),"stress");closeImport()});
+document.getElementById("emptySeed").addEventListener("click",()=>{dropS("data");load(SEED);setBanner(null)});
+document.getElementById("restoreSeed").addEventListener("click",()=>{if(ownBrain())backToOwn();else{dropS("data");load(SEED);setBanner(null)}closeImport()});
+document.getElementById("showEmpty").addEventListener("click",()=>{load({neurons:[]});closeImport()});
+document.getElementById("stress").addEventListener("click",()=>{load(synthetic(3000));setBanner("Synthetic performance test · 3,000 neurons","Back to my brain",()=>{if(ownBrain())backToOwn();else{load(localBrain()||SEED);setBanner(null)}});closeImport()});
 document.getElementById("copyJson").addEventListener("click",()=>{const txt=JSON.stringify(exportData(G),null,2);
   const fb2=()=>{document.getElementById("copyArea").innerHTML=`<textarea class="copy" id="copyTa" readonly aria-label="Brain data as JSON"></textarea>`;const ta=document.getElementById("copyTa");ta.value=txt;ta.focus();ta.select();impMsg.className="msg";impMsg.textContent="Copying isn’t available here. The JSON is selected below, ready to copy."};
   try{navigator.clipboard.writeText(txt).then(()=>{impMsg.className="msg";impMsg.textContent=`Copied ${G.neurons.length} neurons as JSON.`},fb2)}catch(e){fb2()}});
@@ -857,59 +858,219 @@ fileIn.addEventListener("change",()=>{if(fileIn.files[0])readFile(fileIn.files[0
 ["dragenter","dragover"].forEach(t=>addEventListener(t,e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){e.preventDefault();dropEl.classList.add("over")}}));
 ["dragleave","drop"].forEach(t=>addEventListener(t,()=>dropEl.classList.remove("over")));
 addEventListener("drop",e=>{if(!e.dataTransfer||!e.dataTransfer.files.length)return;e.preventDefault();if(scrim.hidden)openImport();readFile(e.dataTransfer.files[0])});
-function readFile(f){const r=new FileReader();r.onload=()=>{try{const data=JSON.parse(r.result);
-    if(Importer.isClaudeExport(data)||(Array.isArray(data)&&data[0]&&"mapping" in data[0])){importExport(data);return}
+// Where an import lands: the account's Brain when signed in, otherwise this browser.
+const IMPORT_UI={msg:impMsg,close:closeImport};
+function readFile(f,ui=IMPORT_UI){const r=new FileReader();r.onload=()=>{try{const data=JSON.parse(r.result);
+    if(Importer.exportKind(data)||(Array.isArray(data)&&data[0]&&"mapping" in data[0])){importExport(data,ui);return}
     const t=normalize(data);if(!t.neurons.length)throw new Error("The file has no neurons in it.");
-    load(data,"import");store("data",JSON.stringify(data));impMsg.className="msg";impMsg.textContent=`Imported ${t.neurons.length} neurons and ${t.edges.length} connections.`;setTimeout(closeImport,900);
-  }catch(err){impMsg.className="msg err";impMsg.textContent=err instanceof SyntaxError?"That file isn’t valid JSON. Check it opens in a JSON viewer, then try again.":err.message}};
-  r.onerror=()=>{impMsg.className="msg err";impMsg.textContent="The file couldn’t be read. Try choosing it again."};r.readAsText(f)}
-// A raw claude.ai export is grouped into knowledge right here, merged into the brain on screen
-// (seed or a previous import) and kept in this browser. The Claude pass lives in the CLI.
-function importExport(data){
-  let base=SEED.neurons;const saved=readS("data");
-  if(saved){try{const b=JSON.parse(saved);const l=Array.isArray(b)?b:b&&b.neurons;if(Array.isArray(l)&&l.length)base=l}catch(e){}}
-  impMsg.className="msg";impMsg.textContent="Grouping your conversations into knowledge…";
-  setTimeout(()=>{try{const {brain,stats}=Importer.fromExport(data,{base,conv:CONV});
-    load(brain,"import");const kept=store("data",JSON.stringify(brain));
-    impMsg.textContent=`Grouped ${stats.conversations.toLocaleString("en-IN")} conversations into ${stats.topics} topics: ${stats.added} new ${stats.added===1?"neuron":"neurons"}, ${stats.updated} merged into existing ones. New neurons are private.`+
-      (kept?"":" It’s too large to keep in this browser, so it resets on reload. Use npm run import for a brain.json you can reopen.");
-    if(kept)setTimeout(closeImport,2400)}catch(err){impMsg.className="msg err";impMsg.textContent=err.message}},40)}
+    const list=Array.isArray(data)?data:data.neurons;
+    if(ownBrain()){commitBrain({neurons:Importer.merge(APP.base,list,{conv:CONV}).neurons},"import",`Read ${t.neurons.length} neurons and ${t.edges.length} connections.`,ui);return}
+    load(data);store("data",JSON.stringify(data));localBanner();ui.msg.className="msg";ui.msg.textContent=`Imported ${t.neurons.length} neurons and ${t.edges.length} connections.`;setTimeout(ui.close,900);
+  }catch(err){ui.msg.className="msg err";ui.msg.textContent=err instanceof SyntaxError?"That file isn’t valid JSON. Check it opens in a JSON viewer, then try again.":err.message}};
+  r.onerror=()=>{ui.msg.className="msg err";ui.msg.textContent="The file couldn’t be read. Try choosing it again."};r.readAsText(f)}
+// A raw Claude or ChatGPT export is grouped into knowledge right here, in the browser. Full
+// conversations never leave it; only the knowledge they form is saved.
+function importExport(data,ui=IMPORT_UI){
+  const provider=Importer.exportKind(data)||"import";
+  ui.msg.className="msg";ui.msg.textContent="Grouping your conversations into knowledge…";
+  setTimeout(()=>{try{const {brain,stats}=Importer.fromExport(data,{base:importBase(),conv:CONV});
+    commitBrain(brain,provider,`Grouped ${stats.conversations.toLocaleString("en-IN")} conversations into ${stats.topics} topics: ${stats.added} new ${stats.added===1?"neuron":"neurons"}, ${stats.updated} merged into existing ones. New neurons are private.`,ui)}
+    catch(err){ui.msg.className="msg err";ui.msg.textContent=err.message}},40)}
+async function commitBrain(brain,provider,doneText,ui){
+  if(ownBrain()){
+    const changed=Cloud.changedNeurons(APP.base,brain.neurons.map(n=>Importer.expand(n,CONV)));
+    if(!changed.length){ui.msg.className="msg";ui.msg.textContent=`${doneText} Nothing new to save.`;return}
+    ui.msg.className="msg";ui.msg.textContent=`Saving ${changed.length} ${changed.length===1?"change":"changes"} to your Brain…`;
+    try{const r=await Cloud.sync(provider,changed,(d,t)=>{ui.msg.textContent=`Saving to your Brain · ${d} of ${t}`});
+      await refreshBrain();ui.msg.textContent=`${doneText} Saved ${r.created} new and ${r.updated} updated.`;setTimeout(ui.close,2600)}
+    catch(e){ui.msg.className="msg err";ui.msg.textContent=e.status===401?"Your session has ended. Sign in again, then import once more.":"We couldn’t save this import. Your existing knowledge is safe. Try again in a moment.";if(e.status===401)setTimeout(()=>enterGuest("expired","regrow"),1800)}
+    return}
+  load(brain);const kept=store("data",JSON.stringify(brain));localBanner();
+  ui.msg.className="msg";ui.msg.textContent=doneText+(kept?"":" It’s too large to keep in this browser, so it resets on reload. Use npm run import for a brain.json you can reopen.");
+  if(kept)setTimeout(ui.close,2400)}
 document.getElementById("schema").textContent=JSON.stringify({neurons:[{id:"neuron-001",title:"AI Design Workflow",category:"AI / Design",type:"project | skill | foundation | experiment | research | idea",status:"built | in-progress | exploring | experimenting | learned | paused | archived",visibility:"public | private",weight:"1–5",createdAt:"2026-03-12",updatedAt:"2026-09-20",description:"…",learned:["…"],created:["…"],insights:["…"],skills:["AI","UX Design"],conversations:[{title:"…",date:"2026-09-20",summary:"…"}],connections:["neuron-002","neuron-017"]}]},null,2);
 function synthetic(N){const r=rng(99),neurons=[],ds=["design","ai","product","dev"];
   for(let i=0;i<N;i++){const t=TYPES[Math.min(5,(Math.pow(r(),.8)*6)|0)];neurons.push({id:"syn-"+i,title:"Synthetic "+String(i+1).padStart(4,"0"),domains:[ds[(r()*4)|0]],type:t,status:t==="idea"?"idea":"exploring",weight:1+((r()*r()*5)|0),description:"Synthetic neuron for performance testing.",synthetic:true,connections:[],conversations:[{title:"Synthetic conversation",date:iso(NOW-r()*300*DAY),summary:""}]})}
   const byR={};neurons.forEach((n,i)=>{const k=regionOf({type:n.type,domains:n.domains});(byR[k]=byR[k]||[]).push(i)});
   neurons.forEach((n,i)=>{const pool=byR[regionOf({type:n.type,domains:n.domains})];for(let k=0;k<2;k++){const j=r()<.85?pool[(r()*pool.length)|0]:(r()*N)|0;if(j!==i)n.connections.push("syn-"+j)}});return{neurons}}
 
-function load(data,mode){
-  try{G=normalize(data)}catch(e){G=normalize(SEED);mode="seed"}
+function setBanner(text,btn,fn){if(!text){banner.hidden=true;banner.innerHTML="";return}
+  banner.hidden=false;banner.innerHTML=`<span>${esc(text)}</span>${btn?`<button class="vbtn" id="bAct">${esc(btn)}</button>`:""}`;if(btn)document.getElementById("bAct").onclick=fn}
+function localBanner(){if(APP.mode==="guest")setBanner("This brain lives in this browser","Save it to an account",()=>openAuth());
+  else setBanner("Showing imported data","Back to seed brain",()=>{dropS("data");load(SEED);setBanner(null)})}
+
+// how: "boot" plays the whole intro; "forming" grows the structure while data loads;
+// "continue" carries on from forming; anything else regrows the knowledge in place.
+function load(data,how="regrow"){
+  try{G=normalize(data)}catch(e){G=normalize(SEED)}
   if(S.sel>=0){S.sel=-1;panel.classList.remove("open");document.body.classList.remove("detail");ctxEl.hidden=true}
   S.hover=-1;S.focus=null;S.insight=-1;S.trail=[];S.region="all";S.asOf=null;sig.list=[];prop=null;fxParts=[];
-  const empty=!G.neurons.length;emptyEl.hidden=!empty;document.body.classList.toggle("is-empty",empty);
-  banner.hidden=!(mode==="stress"||mode==="import");
-  if(mode==="stress")banner.innerHTML=`<span>Synthetic performance test · ${G.neurons.length.toLocaleString("en-IN")} neurons, ${G.edges.length.toLocaleString("en-IN")} connections</span><button class="vbtn" id="bRestore">Back to my brain</button>`;
-  if(mode==="import")banner.innerHTML=`<span>Showing imported data</span><button class="vbtn" id="bRestore">Back to seed brain</button>`;
-  const br=document.getElementById("bRestore");if(br)br.onclick=()=>{dropS("data");load(SEED,"seed")};
+  const empty=!G.neurons.length;emptyEl.hidden=!empty||APP.mode!=="local"||how==="forming";document.body.classList.toggle("is-empty",empty);
   SC=buildScaffold(G);buildScaffoldGPU();NLAY={};if(!empty)SKEYS.forEach(s=>NLAY[s]=neuronLayout(s,G,SC.st));
   buildGPU();NB=NLAY[S.state]||new Float32Array(0);NA=NB;SCB={lines:SC.lines[S.state],pts:SC.pts[S.state]};SCA=SCB;MO.k=1;uploadMorph();computeCentroids();
   mote.line.fill(0);
   if(!empty)buildRegionLabels();else{Object.values(rlEls).forEach(e=>e.remove());rlEls={};nlEls.forEach(e=>{e.style.opacity=0;e.dataset.i=-1})}
   applyFilters();renderNav();renderTimeline();renderDrawer();renderView();renderStates();closeDrawer();measureSafe();
-  // the brain forms itself: the first load plays the whole intro, later loads regrow the knowledge
-  const now=performance.now();introCap=empty?.42:1;
-  if(mode==="boot"){introFrom=0;introStart=now;introCam=!REDUCED}else{introFrom=empty?.12:Math.min(introAt(now),.5);introStart=now;introRate=1/3400;introCam=false;goHome(1.2)}
-  if(empty){uiShown=true;introCam=false;goHome(0);document.body.classList.remove("intro")}
+  const now=performance.now();
+  if(how==="forming"){introCap=.42;introFrom=0;introStart=now;introRate=1/5200;introCam=!REDUCED;uiShown=false;if(!REDUCED)document.body.classList.add("intro");return}
+  introCap=empty?.42:1;
+  if(how==="boot"){introFrom=0;introStart=now;introRate=1/5200;introCam=!REDUCED}
+  else if(how==="continue"){introFrom=introAt(now);introStart=now;introRate=1/3600}
+  else{introFrom=empty?.12:Math.min(introAt(now),.5);introStart=now;introRate=1/3400;introCam=false;goHome(1.2)}
+  if(empty){uiShown=true;introCam=false;goHome(how==="boot"?0:1.2);document.body.classList.remove("intro")}
 }
 let rz=0;addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(()=>{if(G){measureSafe();if(S.sel<0&&!S.focus&&S.region==="all"&&!introCam)goHome(.6)}},150)});
+
+/* =========================================================================
+   APP — accounts, loading, landing, welcome, connected AI and the account sheet.
+   Only the hosted build turns this on (<meta name="brain-mode" content="app">). The claude.ai
+   artifact, and any deployment without Supabase configured, run in this browser as before.
+   ========================================================================= */
+const MODE=(document.querySelector('meta[name="brain-mode"]')||{}).content==="app"?"app":"local";
+const APP={mode:"local",user:null,brain:null,profile:null,base:[],sources:[],history:[],demo:false,retry:null};
+const $=id=>document.getElementById(id);
+const tick=ms=>new Promise(r=>setTimeout(r,ms));
+const ownBrain=()=>APP.mode==="user"&&!APP.demo;
+function importBase(){if(ownBrain())return APP.base;const l=localBrain();return l?l.neurons:SEED.neurons}
+function localBrain(){const s=readS("data");if(!s)return null;try{const b=JSON.parse(s);const l=Array.isArray(b)?b:b&&b.neurons;return Array.isArray(l)&&l.length?{neurons:l}:null}catch(e){return null}}
+const STAGES=["loading","landing","auth","welcome","connect","errorState"];
+function stage(id){STAGES.forEach(s=>{$(s).hidden=s!==id});document.body.classList.toggle("staged",!!id);
+  if(id&&id!=="loading"){const f=$(id).querySelector("a[href],button:not([hidden]):not(.x),input");setTimeout(()=>f&&f.focus({preventScroll:true}),80)}}
+const STEP_N={identity:0,knowledge:1,relationships:2,nodes:3,ready:4};
+function step(s){const k=STEP_N[s];$("steps").querySelectorAll("li").forEach((li,i)=>{li.className=i<k?"done":i===k?"on":""})}
+const ERRORS={
+  load:["Your Brain couldn’t be loaded.","Your existing knowledge is safe. Try again in a moment.","Try again"],
+  unavailable:["Your Brain is temporarily unavailable.","Your existing knowledge is safe. Try again in a moment.","Try again"],
+  auth:["We couldn’t authenticate your account.","Nothing was changed. Try signing in again.","Sign in again"],
+  offline:["We couldn’t reach your Brain.","Check your connection, then try again. Your existing knowledge is safe.","Try again"]};
+function showError(kind,retry){const[t,b,btn]=ERRORS[kind]||ERRORS.load;$("errTitle").textContent=t;$("errBody").textContent=b;$("errRetry").textContent=btn;APP.retry=retry||bootApp;stage("errorState")}
+$("errRetry").addEventListener("click",()=>{const f=APP.retry;stage("loading");f&&f()});
+
+// The only place the page decides who it's showing to.
+async function bootApp(){
+  load({neurons:[]},"forming");stage("loading");step("identity");
+  let cfg=null;try{cfg=await Cloud.config()}catch(e){}
+  if(!cfg||!cfg.accounts){stage(null);return bootLocal("continue")}
+  let s;try{s=await Cloud.session()}catch(e){return showError(e.code==="offline"?"offline":"unavailable")}
+  const q=new URLSearchParams(location.search),authErr=q.get("auth_error");
+  if(authErr)history.replaceState(null,"",location.pathname+location.hash);
+  if(!s.user)return enterGuest(authErr?"auth-error":null,"continue");
+  APP.user=s.user;openBrain("continue");
+}
+async function openBrain(how="regrow"){
+  APP.mode="user";APP.demo=false;renderAccountBtn();stage("loading");step("knowledge");
+  let payload;try{payload=await Cloud.brain()}catch(e){if(e.status===401)return enterGuest("expired",how);return showError(e.code==="offline"?"offline":e.status===503?"unavailable":"load",()=>openBrain(how))}
+  adoptPayload(payload);step("relationships");await tick(280);
+  step("nodes");setBanner(null);load(Cloud.toVisual(payload),how);await tick(420);
+  step("ready");await tick(520);stage(null);renderAccountBtn();
+  if(!APP.base.length)showWelcome();
+}
+function adoptPayload(p){APP.brain=p.brain;APP.profile=p.profile;APP.base=Cloud.toVisual(p).neurons;APP.sources=p.sources||[];APP.history=p.history||[]}
+async function refreshBrain(){const p=await Cloud.brain();adoptPayload(p);load(Cloud.toVisual(p));setBanner(null);if(!$("account").hidden)renderAccount()}
+function enterGuest(reason,how="regrow"){
+  APP.mode="guest";APP.user=null;APP.demo=true;renderAccountBtn();closeAccount();
+  const local=localBrain();load(local||SEED,how);
+  if(local)localBanner();else setBanner(null);
+  if(reason==="expired")openAuth("Your session has ended. Sign in again to open your Brain.",true);
+  else if(reason==="auth-error")openAuth("We couldn’t authenticate your account. Try again.",true);
+  else stage("landing");
+}
+function bootLocal(how){
+  APP.mode="local";if(readS("view")==="public")S.view="public";
+  let data=SEED;const saved=localBrain();if(saved)data=saved;
+  if(location.hash==="#empty")data={neurons:[]};else if(location.hash==="#stress")data=synthetic(3000);
+  load(data,how);
+  if(location.hash==="#stress")setBanner(`Synthetic performance test · ${G.neurons.length.toLocaleString("en-IN")} neurons, ${G.edges.length.toLocaleString("en-IN")} connections`,"Back to my brain",()=>{load(saved||SEED);setBanner(null)});
+  else if(saved&&location.hash!=="#empty")localBanner();
+}
+
+/* landing + auth */
+$("landingBuild").addEventListener("click",()=>openAuth());
+$("landingDemo").addEventListener("click",()=>{stage(null);if(!localBrain())setBanner("Demo brain · explore freely","Build my own",()=>openAuth())});
+let authFromLanding=false;
+function openAuth(message,isError){authFromLanding=!$("landing").hidden;$("authEmail").hidden=true;$("authEmailBtn").hidden=false;
+  const m=$("authMsg");m.className=isError?"msg err":"msg";m.textContent=message||"";stage("auth")}
+$("auth").addEventListener("click",e=>{if(e.target.closest('[data-act="close"]'))stage(authFromLanding?"landing":null)});
+$("authEmailBtn").addEventListener("click",()=>{$("authEmailBtn").hidden=true;$("authEmail").hidden=false;$("authEmailIn").focus()});
+$("authEmail").addEventListener("submit",async e=>{e.preventDefault();const m=$("authMsg"),email=$("authEmailIn").value.trim(),b=e.target.querySelector("button");
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){m.className="msg err";m.textContent="That doesn’t look like an email address.";return}
+  b.disabled=true;m.className="msg";m.textContent="Sending your link…";
+  try{await Cloud.emailLink(email);m.textContent=`Check your inbox. We sent a link to ${email}. It opens your Brain.`}
+  catch(err){m.className="msg err";m.textContent=err.message}finally{b.disabled=false}});
+
+/* first visit, and the empty brain */
+function showWelcome(){const first=!readS("welcomed:"+APP.user.id);store("welcomed:"+APP.user.id,"1");
+  $("welcomeTitle").textContent=first?"Welcome to your Brain.":"Your Brain is empty.";
+  $("welcomeSub").textContent=first?"Connect the AI tools you use and turn your conversations into a living knowledge network.":"Start connecting your AI tools and the network will begin to form.";
+  const lb=localBrain(),ad=$("welcome").querySelector('[data-act="adopt"]');ad.hidden=!lb;if(lb)ad.querySelector("span").textContent=`${lb.neurons.length} neurons you built here before signing in`;
+  $("welcome").querySelector('[data-act="demo"]').hidden=!first;stage("welcome")}
+$("welcome").addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
+  if(a==="close")stage(null);else if(a==="connect-claude")openConnect("claude");else if(a==="connect-chatgpt")openConnect("chatgpt");
+  else if(a==="import"){stage(null);openImport()}else if(a==="demo")exploreDemo();else if(a==="adopt")adoptLocal()});
+function exploreDemo(){stage(null);closeAccount();APP.demo=true;load(SEED);setBanner("Exploring the demo brain","Back to my brain",backToOwn)}
+function backToOwn(){APP.demo=false;load({neurons:APP.base});setBanner(null);if(!APP.base.length)showWelcome()}
+// The anonymous brain built in this browser becomes the account's first knowledge.
+async function adoptLocal(){const lb=localBrain();if(!lb)return;stage(null);openImport();
+  await commitBrain({neurons:Importer.merge(APP.base,lb.neurons,{conv:CONV}).neurons},"import","Brought in the brain from this browser.",IMPORT_UI);
+  if(APP.base.length)dropS("data")}
+
+/* connected AI: honest about what each provider allows */
+const GUIDE={
+  claude:{label:"Claude",steps:["claude.ai → Settings → Privacy → Export data","Open the email link and download the zip","Unzip it and choose conversations.json"]},
+  chatgpt:{label:"ChatGPT",steps:["chatgpt.com → Settings → Data controls → Export data","Open the email link and download the zip","Unzip it and choose conversations.json"]}};
+function openConnect(p){const g=GUIDE[p],src=APP.sources.find(s=>s.provider===p);
+  $("connect").innerHTML=`<button class="ibtn x" data-act="close" aria-label="Close"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+    <p class="mono eyebrow">Connect ${g.label}</p><h2 id="connectTitle">Bring in your ${g.label} history.</h2>
+    <p class="sub">${g.label} doesn’t offer an official way for apps to read your conversations, so there’s no password to share and nothing to sign in to. Your data export is the supported route.</p>
+    <ol class="how">${g.steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ol>
+    ${src&&src.status==="connected"?`<p class="state mono"><i></i>Imported · last import ${esc(Cloud.ago(src.last_synced_at))} · next: import a newer export</p>`:""}
+    <div class="row"><label class="cta mag" for="connectFile">Choose conversations.json</label><input type="file" id="connectFile" accept=".json,application/json" class="sr"></div>
+    <p class="msg" id="connectMsg" role="status" aria-live="polite"></p>
+    <p class="fine">Grouped in your browser. Full conversations never leave this device; only the knowledge they form is saved to your Brain.</p>`;
+  $("connectFile").addEventListener("change",e=>{const f=e.target.files[0];if(f)readFile(f,{msg:$("connectMsg"),close:()=>stage(null)})});stage("connect")}
+$("connect").addEventListener("click",e=>{if(e.target.closest('[data-act="close"]'))stage(ownBrain()&&!APP.base.length?"welcome":null)});
+
+/* account */
+const btnAccount=$("btnAccount"),accountEl=$("account");
+function renderAccountBtn(){btnAccount.hidden=APP.mode==="local";
+  if(APP.mode==="guest"){btnAccount.className="vbtn mag acct";btnAccount.innerHTML=`<span>Sign in</span>`;btnAccount.setAttribute("aria-label","Sign in")}
+  else if(APP.user){const u=APP.user;btnAccount.className="ibtn mag acct";btnAccount.setAttribute("aria-label",`Account: ${u.name}`);
+    btnAccount.innerHTML=u.avatar?`<img src="${esc(u.avatar)}" alt="" referrerpolicy="no-referrer">`:`<span>${esc((u.name||"?").trim().charAt(0).toUpperCase())}</span>`}}
+btnAccount.addEventListener("click",()=>{if(APP.mode==="guest")return openAuth();if(accountEl.hidden){renderAccount();accountEl.hidden=false;closeDrawer()}else closeAccount()});
+function closeAccount(){accountEl.hidden=true}
+function renderAccount(){const u=APP.user;if(!u)return;const n=APP.base.length,e=APP.base.reduce((s,x)=>s+(x.connections||[]).length,0)/2;
+  const row=p=>{const src=APP.sources.find(s=>s.provider===p),on=src&&src.status==="connected",label=p==="import"?"Import":GUIDE[p].label;
+    return`<div class="src"><div><b>${label}</b><span class="mono">${on?`Imported · ${esc(Cloud.ago(src.last_synced_at))}`:src&&src.status==="error"?"Last import failed":"Not connected"}</span>${on&&p!=="import"?`<span class="mono next">Next sync · when you import a newer export</span>`:""}</div>
+      <div class="acts">${p==="import"?`<button data-act="import">Import data</button>`:`<button data-act="connect-${p}">${on?"Import newer":"Connect"}</button>`}${on?`<button data-act="disconnect-${p}">Disconnect</button>`:""}</div></div>`};
+  const hist=APP.history.length?APP.history.slice(0,5).map(h=>`<li><span class="mono">${esc(new Date(h.started_at).toLocaleDateString("en-GB",{day:"numeric",month:"short"}))}</span>${esc(h.provider==="import"?"Import":GUIDE[h.provider]?GUIDE[h.provider].label:h.provider)} · ${h.items_processed} in · +${h.nodes_created} nodes<em class="${esc(h.status)}">${esc(h.status)}</em></li>`).join(""):`<li class="none">No imports yet.</li>`;
+  accountEl.innerHTML=`<header><span class="av">${u.avatar?`<img src="${esc(u.avatar)}" alt="" referrerpolicy="no-referrer">`:esc((u.name||"?").charAt(0).toUpperCase())}</span><div><b>${esc(u.name||"You")}</b><span>${esc(u.email||"")}</span></div>
+      <button class="ibtn x" data-act="close" aria-label="Close account"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></header>
+    <p class="note mono"><i></i>Your Brain is private to your account</p>
+    <section><h4 class="mono">Brain</h4><input id="brainName" maxlength="80" aria-label="Brain name" value="${esc(APP.brain?APP.brain.name:"My AI Brain")}"><p class="meta mono">${n} nodes · ${e} connections</p></section>
+    <section><h4 class="mono">Connected AI</h4>${["claude","chatgpt","import"].map(row).join("")}</section>
+    <section><h4 class="mono">Sync</h4><ul class="hist">${hist}</ul></section>
+    <section><h4 class="mono">Data</h4><div class="danger"><button data-act="del-data">Delete imported data</button><button data-act="del-brain">Delete brain</button></div>
+      <p class="fine">MY AI BRAIN only processes data you explicitly provide or authorize. Full conversations never leave your browser.</p></section>
+    <button class="signout mono" data-act="signout">Sign out</button>`;
+  const nm=$("brainName");nm.addEventListener("change",async()=>{const v=nm.value.trim();if(!v||!APP.brain||v===APP.brain.name)return;try{await Cloud.rename(v);APP.brain.name=v}catch(err){nm.value=APP.brain.name}})}
+const armed=new Map();
+accountEl.addEventListener("click",async e=>{const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
+  if(a==="close")return closeAccount();
+  if(a.startsWith("connect-")){closeAccount();return openConnect(a.slice(8))}
+  if(a==="import"){closeAccount();return openImport()}
+  if(a==="signout"){b.disabled=true;try{await Cloud.signOut()}catch(err){}APP.user=null;APP.base=[];return enterGuest(null,"regrow")}
+  if(a.startsWith("disconnect-")){try{await Cloud.source(a.slice(11),"disconnect");await refreshBrain()}catch(err){b.textContent="Try again"}return}
+  if(a==="del-data"||a==="del-brain"){
+    if(!armed.get(a)){armed.set(a,setTimeout(()=>{armed.delete(a);renderAccount()},4000));b.classList.add("armed");b.textContent=a==="del-data"?`Confirm: delete ${APP.base.length} nodes`:"Confirm: delete this brain";return}
+    clearTimeout(armed.get(a));armed.delete(a);b.disabled=true;b.textContent="Deleting…";
+    try{await(a==="del-data"?Cloud.deleteData():Cloud.deleteBrain());await refreshBrain();closeAccount();showWelcome()}catch(err){b.disabled=false;b.textContent="Couldn’t delete. Try again"}}});
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!accountEl.hidden)closeAccount();else if(!$("auth").hidden)stage(authFromLanding?"landing":null);else if(!$("connect").hidden||!$("welcome").hidden)stage(null)});
 
 (function boot(){
   if(!gl){emptyEl.hidden=false;emptyEl.querySelector("h2").textContent="This brain needs WebGL.";emptyEl.querySelector("p").textContent="Open the page in a current browser with hardware acceleration on to see it.";document.body.classList.remove("intro");return}
   if(!REDUCED)document.body.classList.add("intro");else document.body.classList.remove("intro");
   if(readS("view")==="public")S.view="public";const st=readS("state");if(SKEYS.includes(st))S.state=st;
-  let data=SEED,mode="boot";const saved=readS("data");if(saved){try{data=JSON.parse(saved);banner.dataset.imported="1"}catch(e){}}
-  if(location.hash==="#empty")data={neurons:[]};else if(location.hash==="#stress")data=synthetic(3000);
   const m=location.hash.match(/^#(flow|orb|layers|galaxy|engine)$/);if(m)S.state=m[1];
-  load(data,mode);
-  if(saved&&data!==SEED&&location.hash!=="#stress"&&location.hash!=="#empty"){banner.hidden=false;banner.innerHTML=`<span>Showing imported data</span><button class="vbtn" id="bRestore">Back to seed brain</button>`;document.getElementById("bRestore").onclick=()=>{dropS("data");load(SEED,"seed")}}
-  if(location.hash==="#stress"){banner.hidden=false;banner.innerHTML=`<span>Synthetic performance test · ${G.neurons.length.toLocaleString("en-IN")} neurons, ${G.edges.length.toLocaleString("en-IN")} connections</span><button class="vbtn" id="bRestore">Back to my brain</button>`;document.getElementById("bRestore").onclick=()=>{dropS("data");load(SEED,"seed")}}
+  if(MODE==="app")bootApp();else bootLocal("boot");
   requestAnimationFrame(frame);
 })();

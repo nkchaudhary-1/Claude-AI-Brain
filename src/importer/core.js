@@ -37,29 +37,48 @@ export const Importer = (() => {
   const count = (rx, s) => (s.match(rx) || []).length;
 
   /* ---------- 1. Conversations ---------- */
-  function isClaudeExport(data) {
-    const list = Array.isArray(data) ? data : data && Array.isArray(data.conversations) ? data.conversations : null;
-    return !!(list && list.length && list[0] && typeof list[0] === "object" && "chat_messages" in list[0]);
+  const listOf = data => Array.isArray(data) ? data : data && Array.isArray(data.conversations) ? data.conversations : null;
+  // "claude" (conversations.json from claude.ai), "chatgpt" (conversations.json from ChatGPT), or null
+  function exportKind(data) {
+    const list = listOf(data), first = list && list.find(c => c && typeof c === "object");
+    if (!first) return null;
+    if ("chat_messages" in first) return "claude";
+    if ("mapping" in first) return "chatgpt";
+    return null;
   }
+  const isClaudeExport = data => exportKind(data) !== null;
   function messageText(m) {
     if (typeof m.text === "string" && m.text.trim()) return m.text;
     return (Array.isArray(m.content) ? m.content : []).filter(b => b && b.type === "text" && b.text).map(b => b.text).join("\n");
   }
+  // ChatGPT keeps each conversation as a tree of nodes; the visible thread is every user and
+  // assistant message in time order. Images, tool output and system prompts are skipped.
+  function chatgptMessages(c) {
+    return Object.values(c.mapping || {}).map(x => x && x.message).filter(m => m && m.author && (m.author.role === "user" || m.author.role === "assistant"))
+      .map(m => ({ who: m.author.role === "user" ? "human" : "assistant", t: +m.create_time || 0,
+        text: Array.isArray(m.content && m.content.parts) ? m.content.parts.filter(p => typeof p === "string").join("\n") : (m.content && typeof m.content.text === "string" ? m.content.text : "") }))
+      .filter(m => m.text.trim()).sort((a, b) => a.t - b.t);
+  }
   function parseExport(data) {
-    const list = Array.isArray(data) ? data : data && Array.isArray(data.conversations) ? data.conversations : null;
-    if (list && list[0] && "mapping" in list[0]) throw new Error("This looks like a ChatGPT export. Only Claude exports (conversations.json from claude.ai → Settings → Privacy → Export data) are supported.");
-    if (!list || !isClaudeExport(data)) throw new Error("No Claude conversations found. Use conversations.json from the claude.ai data export.");
+    const list = listOf(data), kind = exportKind(data);
+    if (!list || !kind) throw new Error("No conversations found. Use conversations.json from a Claude or ChatGPT data export.");
     const out = [];
     list.forEach((c, i) => {
-      if (!c || !Array.isArray(c.chat_messages)) return;
-      const msgs = c.chat_messages.map(m => ({ who: m.sender === "human" ? "human" : "assistant", text: messageText(m) })).filter(m => m.text.trim());
+      if (!c || typeof c !== "object") return;
+      let msgs, created, updated, name;
+      if (kind === "claude") {
+        if (!Array.isArray(c.chat_messages)) return;
+        msgs = c.chat_messages.map(m => ({ who: m.sender === "human" ? "human" : "assistant", text: messageText(m) })).filter(m => m.text.trim());
+        created = Date.parse(c.created_at || (c.chat_messages[0] && c.chat_messages[0].created_at) || ""); updated = Date.parse(c.updated_at || "") || created; name = c.name;
+      } else {
+        msgs = chatgptMessages(c);
+        created = c.create_time ? c.create_time * 1000 : NaN; updated = c.update_time ? c.update_time * 1000 : created; name = c.title;
+      }
       if (!msgs.length) return;
       const human = msgs.filter(m => m.who === "human").map(m => m.text);
       const assistant = msgs.filter(m => m.who === "assistant").map(m => m.text);
-      const created = Date.parse(c.created_at || (c.chat_messages[0] && c.chat_messages[0].created_at) || "");
-      const updated = Date.parse(c.updated_at || "") || created;
-      const title = clip(c.name, 90) || clip((human[0] || "").split("\n")[0], 60) || "Untitled conversation";
-      out.push({ id: String(c.uuid || c.id || `conv-${i + 1}`), title, date: isNaN(created) ? null : iso(created), updated: isNaN(updated) ? null : updated,
+      const title = clip(name, 90) || clip((human[0] || "").split("\n")[0], 60) || "Untitled conversation";
+      out.push({ id: String(c.uuid || c.id || c.conversation_id || `conv-${i + 1}`), title, date: isNaN(created) ? null : iso(created), updated: isNaN(updated) ? null : updated,
         summary: clip(c.summary || human[0] || "", 160), human, assistant, turns: msgs.length });
     });
     if (!out.length) throw new Error("The export has conversations, but none of them contain any messages.");
@@ -282,9 +301,9 @@ export const Importer = (() => {
     const groups = cluster(convs, vocab, { threshold });
     const neurons = toNeurons(groups, vocab, { now });
     const { neurons: merged, stats } = merge(base, neurons, { conv });
-    return { brain: { version: 2, generatedAt: iso(now || Date.now()), source: { kind: "claude-export", mode: "offline", conversations: convs.length }, neurons: merged },
+    return { brain: { version: 2, generatedAt: iso(now || Date.now()), source: { kind: `${exportKind(data)}-export`, mode: "offline", conversations: convs.length }, neurons: merged },
       stats: { conversations: convs.length, topics: neurons.length, ...stats } };
   }
 
-  return { isClaudeExport, parseExport, vectorize, cluster, toNeurons, merge, expand, fromExport, clip, slug, iso };
+  return { isClaudeExport, exportKind, parseExport, vectorize, cluster, toNeurons, merge, expand, fromExport, clip, slug, iso };
 })();

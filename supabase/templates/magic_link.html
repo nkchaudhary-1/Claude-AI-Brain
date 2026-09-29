@@ -1,0 +1,8 @@
+<!-- Paste into Supabase → Authentication → Emails → Magic Link (production), or used by `supabase start` locally. -->
+<div style="background:#000;color:#eef3fb;font-family:-apple-system,Segoe UI,sans-serif;padding:40px 28px">
+  <p style="font:12px ui-monospace,Menlo,monospace;letter-spacing:.3em;text-transform:uppercase;color:#9fd4ff;margin:0 0 28px">My AI Brain</p>
+  <p style="font-size:20px;font-weight:300;margin:0 0 12px">Your brain starts here.</p>
+  <p style="color:#8a93a6;font-size:14px;line-height:1.6;margin:0 0 28px">Open this link to sign in. It works once and expires soon.</p>
+  <p><a href="{{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=email" style="display:inline-block;background:#eef3fb;color:#000;text-decoration:none;padding:12px 20px;border-radius:999px;font-size:14px">Open my Brain</a></p>
+  <p style="color:#566074;font-size:12px;margin-top:28px">If you didn’t ask for this, you can ignore it.</p>
+</div>

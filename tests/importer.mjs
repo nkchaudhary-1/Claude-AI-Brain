@@ -23,8 +23,16 @@ test("parses the claude.ai export and skips empty conversations", () => {
   assert.equal(Importer.isClaudeExport(SEED), false);
 });
 
-test("rejects a ChatGPT export with a clear message", () => {
-  assert.throws(() => Importer.parseExport([{ title: "x", mapping: {} }]), /ChatGPT/);
+test("reads a ChatGPT export: user and assistant turns in time order", () => {
+  const data = [{ id: "gpt-1", title: "Figma auto layout", create_time: 1760000000, update_time: 1760003600, mapping: {
+    a: { message: { author: { role: "system" }, content: { parts: ["You are ChatGPT"] }, create_time: 1 } },
+    c: { message: { author: { role: "assistant" }, content: { parts: ["Use fixed padding."] }, create_time: 3 } },
+    b: { message: { author: { role: "user" }, content: { parts: ["How does auto layout padding work?", { asset: "image" }] }, create_time: 2 } },
+    d: { message: null } } }, { id: "gpt-empty", title: "Empty", mapping: {} }];
+  assert.equal(Importer.exportKind(data), "chatgpt");
+  const [c] = Importer.parseExport(data);
+  assert.deepEqual([c.id, c.title, c.date, c.turns, c.human, c.assistant], ["gpt-1", "Figma auto layout", "2025-10-09", 2, ["How does auto layout padding work?"], ["Use fixed padding."]]);
+  assert.throws(() => Importer.parseExport([{ foo: 1 }]), /No conversations found/);
 });
 
 test("groups conversations into knowledge, not one neuron per chat", () => {
