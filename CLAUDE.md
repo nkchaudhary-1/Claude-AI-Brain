@@ -4,15 +4,19 @@ A living spatial knowledge network of everything Neelesh has explored, learned a
 
 - Original brief: `docs/brief.md` (17 sections)
 - Visual reference: `docs/ui-reference.png` (the v0.2 concept board; superseded by the v0.4 art direction below)
-- Live prototype: https://claude.ai/artifact/71NzTJtAW4DnjrNs74uhR4 (private artifact, republish from `dist/artifact.html`)
+- Live prototype: https://claude.ai/artifact/71NzTJtAW4DnjrNs74uhR4 (private artifact, local mode, republish from `dist-artifact/artifact.html`)
+- Hosted app: Vercel + Supabase. Setup, deploy guide, schema, RLS and provider notes are in `README.md`.
 
 ## Commands
 
 ```bash
-npm run dev          # static server at http://localhost:5173 (no deps, no build step)
-npm run build        # → dist/index.html (standalone) + dist/artifact.html (claude.ai artifact fragment)
+npm run dev          # http://localhost:5173: source + /api functions (reads .env.local; no env = local mode)
+npm run build        # → dist/ (hosted app, public seed, hashed assets) + dist-artifact/artifact.html (claude.ai, full seed)
+npm run start        # serves dist/ + /api with vercel.json's headers and CSP
 npm run import -- <conversations.json | export folder> [--llm]   # → data/brain.json (see Importer)
-npm test             # importer unit tests, then headless Chromium smoke test → tests/output/*.png
+npm test             # importer unit tests, RLS tests (PGlite), headless Chromium smoke test → tests/output/*.png
+npm run test:rls     # row level security against the real migration
+npm run test:integration  # Docker: supabase/postgres + postgrest + GoTrue stand-in, full API end to end
 npm run test:importer  # importer unit tests only (no browser, no network)
 npm run test:dist    # build, then test the bundled file
 ```
@@ -21,12 +25,14 @@ npm run test:dist    # build, then test the bundled file
 
 ## Architecture
 
-Zero runtime dependencies in the page. Raw WebGL, no three.js. It started that way because the first build environment couldn't reach a CDN, and it stayed because it's small, fast and fully under our control.
+Zero runtime dependencies in the page (the browser never loads a Supabase client). Raw WebGL, no three.js.
+Two modes, chosen by `<meta name="brain-mode">`: **app** (hosted: accounts via `/api`, falls back to local when Supabase isn't configured) and **local** (the claude.ai artifact: seed + localStorage, no network). It started that way because the first build environment couldn't reach a CDN, and it stayed because it's small, fast and fully under our control.
 
 ```
 index.html          markup only; loads src/styles.css and src/main.js as an ES module
 src/styles.css      all styles; tokens on :root; single dark world (no light theme by design)
 src/data/seed.js    CONV (conversation table), SEED (neurons), EDGES (connection list)
+src/cloud.js        Cloud: fetch wrappers for /api + toVisual() (Brain model → renderer) + changedNeurons() + sync()
 src/importer/core.js  Importer: parse export → vocabulary vectors → clusters → neurons → merge. Pure JS,
                     shared by the page and the CLI; one top-level name because the build concatenates
 src/main.js         everything else, in this order:
@@ -39,13 +45,19 @@ src/main.js         everything else, in this order:
   FX OVERLAY        2D canvas: readout leader lines, reticles, panel thread, collapse particles, engine + layer marks
   INTERACTION       pick(), hover, select() = entering a memory, openPanel()/closePanel(), travel() between neurons
   search wave / filters / states / time slider / view / zoom / metadata readouts / insights
-  IMPORT / EMPTY / STRESS (importExport() for raw exports), load(), boot()
-scripts/serve.mjs   dev server
-scripts/build.mjs   inlines CSS + seed + importer + main into single files
+  IMPORT / EMPTY / STRESS importExport(), commitBrain() (account sync or localStorage), load(data, how)
+  APP               bootApp() → loading steps → landing (guest) | openBrain() (user) → welcome / empty / error stages,
+                    auth card, connect card, account sheet. bootLocal() for local mode.
+api/                Vercel functions; api/_lib is shared (never routed). See README → Architecture.
+supabase/           migrations (schema + RLS + signup trigger), config.toml, magic-link template
+scripts/serve.mjs   dev/start server: static + /api handlers, .env.local, vercel.json headers in --dist
+scripts/build.mjs   dist/ (public seed only; fails if private seed text leaks) + dist-artifact/artifact.html
 scripts/import.mjs  CLI: export → data/brain.json, offline or with the Claude pass
 scripts/importer/llm.mjs  the Claude pass (@anthropic-ai/sdk, dev dependency, loaded only with --llm)
 tests/importer.mjs  importer unit tests (grouping, privacy, merge, idempotency, Claude-pass validation, 3k perf)
-tests/smoke.mjs     5 scenarios: desktop flow, phone flow, 3,000-neuron stress, empty state, raw-export import
+tests/rls.mjs       RLS: a second user and anon try to read/write/link into someone else's brain
+tests/integration.mjs  real API end to end (auth cookies, PKCE, refresh, import, isolation, deletion)
+tests/smoke.mjs     11 scenarios: local flows + hosted-app landing/auth/welcome/account/error with /api mocked
 tests/fixtures/claude-export.mjs  synthetic export in the real conversations.json shape (tests only)
 ```
 
@@ -92,13 +104,15 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input is `co
 2. **Claude pass** (`--llm`, CLI only, `claude-opus-5-5`). Step 1 digests batches of ~80k chars (the user's first 3 + last message, the last reply) into summary, topics, kind, learned and created, with structured JSON output at effort medium. Digests are cached in `.brain-cache/digests.json` by conversation id + `updated_at`, so re-imports only pay for new chats. Step 2 sends every digest plus the existing brain's ids and titles and asks for neurons at effort high, reusing existing ids where it's the same knowledge. Conversation ids go out as `c1, c2…` aliases and come back validated through `toBrainNeurons()`. It shows an estimate and asks before spending (`--yes` skips the prompt). Server-side `fallbacks: "default"` handles refusals.
 3. **Merge** (`Importer.merge`, both passes). New neurons match existing ones by id, then by title, then by ≥50% conversation overlap. Seed and hand-written neurons keep every field and only gain conversations, learned, created and skills. Previously imported neurons refresh type, domains, status and description. Title, visibility, weight and insights are curated and always survive. New neurons are always `private`. Re-importing the same export changes nothing.
 
-**Where data lives.** In the page, the merged brain is stored in localStorage (base = the stored import if any, else the seed). The CLI writes `data/brain.json` and merges into it on the next run. `data/`, `.brain-cache/` and `conversations.json` are gitignored. Never commit personal history.
+**Where data lives.** Signed in: Supabase (`knowledge_nodes`, `connections`); only changed nodes are sent, links listed on both ends. Signed out or local mode: localStorage (base = the stored import if any, else the seed). The CLI writes `data/brain.json` and merges into it on the next run. `data/`, `.brain-cache/` and `conversations.json` are gitignored. Never commit personal history.
 
 ## Product rules (don't break these)
 
 - **Never invent data.** No made-up metrics, projects, clients or conversations. Counts on screen are computed from the data. The reference board's "1,284 nodes" is decoration. The same rule applies to the portfolio at neelesh.one.
 - **Client confidentiality.** The Gold Investment app is client work. It and anything derived from it (SIP autonomy dial, the component library) stay `visibility:"private"`. Public view must never show them.
-- **Private first.** The Private view is the default. Public is a curated subset.
+- **Private first.** The Private view is the default. Public is a curated subset. Anything imported without an explicit visibility is stored private.
+- **The public bundle never contains private seed data.** `scripts/build.mjs` strips it and fails the build on a leak. Keep it that way.
+- **Honest providers.** Don't add fake "connect" or "sync" for Claude/ChatGPT. Export → import until an official mechanism exists.
 - Conversation titles in the seed are descriptive labels, not real chat titles. Replace them when the export is imported.
 - Neurons are grouped knowledge. Never draw one neuron per conversation.
 
@@ -121,6 +135,10 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input is `co
 | 13 | v0.4: no anatomical brain; five morphing states of one dataset | The art direction asks for intelligence implied by flow, not anatomy; states share data so switching feels like the same mind rearranging | — |
 | 14 | Depth of field and glow in the shaders, not post-processing | Keeps raw WebGL and zero deps; good enough at this density | Real bloom/DOF is wanted (three.js + postprocessing) |
 | 15 | Metadata uses real counts even though the brief's mock shows 1,284 / 326 / 2,941 | "Never invent data" | — |
+| 17 | v0.5: static front end + Vercel functions, not a Next.js port | Keeps the renderer untouched and the page dependency-free; `/api` is Vercel's native model | Need SSR or React |
+| 18 | Auth sessions in httpOnly cookies via @supabase/ssr on the server; no Supabase client in the browser | No tokens reachable from page JS; every query runs as the user under RLS | Realtime needed in the browser |
+| 19 | No service-role key | Nothing needs to bypass RLS; one less secret | Account deletion or scheduled sync |
+| 20 | Grouping runs in the browser; only derived knowledge is uploaded | Privacy, and exports can exceed Vercel's 4.5 MB body limit | — |
 | 16 | Emerging layer = exploring / experimenting / in-progress and updated in the last 30 days | Honest, data-derived stand-in for "emerging intelligence" | The Claude insight pass lands |
 
 ## Deviations from the art direction

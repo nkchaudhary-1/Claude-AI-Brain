@@ -24,6 +24,11 @@ if (!process.env.BRAIN_IGNORE_ENV) for (const f of [".env.local", ".env"]) {
   } catch {}
 }
 
+// In --dist mode, send the same headers Vercel will (vercel.json), so the CSP is exercised locally.
+const vercelHeaders = dist ? JSON.parse(await readFile(join(root, "vercel.json"), "utf8")).headers || [] : [];
+const headersFor = (path) => Object.fromEntries(vercelHeaders.filter((h) => new RegExp("^" + h.source.replace(/\(\.\*\)/g, ".*") + "$").test(path))
+  .flatMap((h) => h.headers.filter((x) => x.key !== "Strict-Transport-Security").map((x) => [x.key.toLowerCase(), x.value])));
+
 // /api/brain → api/brain.js or api/brain/index.js; folders starting with _ are never routes (as on Vercel)
 async function findHandler(path) {
   const rel = path.replace(/^\/api\/?/, "").replace(/\/+$/, "");
@@ -59,7 +64,7 @@ createServer(async (req, res) => {
   if (!file.startsWith(staticRoot) || (!dist && /(^|[\\/])(\.env|api|supabase|node_modules)([\\/]|$)/.test(file.slice(staticRoot.length)))) { res.writeHead(403).end(); return; }
   try {
     const body = await readFile(file);
-    res.writeHead(200, { "content-type": types[extname(file)] || "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+    res.writeHead(200, { "content-type": types[extname(file)] || "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", ...headersFor(path) });
     res.end(body);
   } catch {
     res.writeHead(404, { "content-type": "text/plain" }).end("Not found");

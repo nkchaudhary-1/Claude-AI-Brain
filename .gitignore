@@ -1,8 +1,23 @@
 node_modules/
 dist/
+dist-artifact/
+.next/
+.vercel/
 tests/output/
+.DS_Store
+
+# Secrets: never commit
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
 # Personal history: never commit
 data/
 .brain-cache/
 conversations.json
-.DS_Store
+
+# Local Supabase CLI state
+supabase/.branches/
+supabase/.temp/

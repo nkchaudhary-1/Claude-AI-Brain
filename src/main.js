@@ -180,7 +180,7 @@ function genPoints(state,SC,lines){const{NP,pline,pv,pdust}=SC,out=new Float32Ar
 // Structure density follows the data: busier regions get more lines. None of this is counted as knowledge.
 function buildScaffold(G){
   const st=regionStats(G);st.focus=S.region!=="all"?S.region:st.top;
-  const tier=phone()?0:innerWidth<1280?1:2,L=[320,540,780][tier],NP=[3400,6800,10800][tier],r0=rng(21);
+  const weak=(navigator.hardwareConcurrency||8)<=4||(navigator.deviceMemory||8)<=4,tier=Math.max(0,(phone()?0:innerWidth<1280?1:2)-(weak?1:0)),L=[320,540,780][tier],NP=[3400,6800,10800][tier],r0=rng(21);
   const tot=RKEYS.reduce((s,k)=>s+st.w[k]+1.5,0);
   const lreg=new Int8Array(L),lseed=new Float32Array(L),lcol=[];
   for(let i=0;i<L;i++){lseed[i]=r0();if(r0()<.2)lreg[i]=-1;else{let x=r0()*tot,k=0;for(;k<5;k++){x-=st.w[RKEYS[k]]+1.5;if(x<=0)break}lreg[i]=k}
@@ -368,6 +368,7 @@ const stAmt=k=>S.state===k?ease(MO.k):0;
 /* =========================================================================
    FRAME
    ========================================================================= */
+let maxPR=innerWidth<=820?1.75:2,slowT=0;
 let last=performance.now(),dimAmt=1,dofAmt=.3,uScale=1,panelAmt=0,roAlpha=0;
 function frame(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;const time=now/1000,intro=introAt(now);
@@ -380,7 +381,9 @@ function frame(now){
   const idle=!REDUCED&&S.sel<0&&!tween&&!introCam&&now-lastInteract>5000&&!pointers.size;
   sway+=((idle?1:0)-sway)*Math.min(1,dt*.5);
   par.x+=(par.tx-par.x)*Math.min(1,dt*2.2);par.y+=(par.ty-par.y)*Math.min(1,dt*2.2);
-  const w=canvas.clientWidth,h=canvas.clientHeight,pr=Math.min(devicePixelRatio||1,2);
+  // Adaptive quality: if frames stay slow once the intro is done, render at 1× instead of 2×.
+  if(uiShown&&!document.hidden){slowT=dt>.034?slowT+dt:Math.max(0,slowT-dt*.5);if(slowT>2.5&&maxPR>1){maxPR=1;slowT=0}}
+  const w=canvas.clientWidth,h=canvas.clientHeight,pr=Math.min(devicePixelRatio||1,maxPR);
   if(w!==W||h!==H||pr!==PR){W=w;H=h;PR=pr;canvas.width=w*pr;canvas.height=h*pr}
   gl.viewport(0,0,canvas.width,canvas.height);
   const th=cam.th+sway*.3*Math.sin(time*.08)+par.x*.06,ph=clamp(cam.ph+par.y*.035,.3,Math.PI-.3),sp=Math.sin(ph);
@@ -412,7 +415,7 @@ function frame(now){
   if(intro<.5){const a=clamp(intro/.03,0,1)*clamp((.5-intro)/.2,0,1)*2;gl.bindBuffer(gl.ARRAY_BUFFER,seedPt.alpha);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array([a]));drawPoints(seedPt,1)}
   if(has){project();updateLabels()}
   panelAmt+=((S.sel>=0?1:0)-panelAmt)*Math.min(1,dt*3);
-  roAlpha+=((uiShown&&S.sel<0&&!P&&level()<2&&MO.k>=1&&S.state!=="engine"?1:0)-roAlpha)*Math.min(1,dt*3);
+  roAlpha+=((uiShown&&!document.body.classList.contains("staged")&&S.sel<0&&!P&&level()<2&&MO.k>=1&&S.state!=="engine"?1:0)-roAlpha)*Math.min(1,dt*3);
   roWrap.style.opacity=roAlpha.toFixed(3);roWrap.style.pointerEvents=roAlpha>.5?"":"none";
   drawFx(now);updateLevel();
   requestAnimationFrame(frame);
@@ -1040,7 +1043,7 @@ btnAccount.addEventListener("click",()=>{if(APP.mode==="guest")return openAuth()
 function closeAccount(){accountEl.hidden=true}
 function renderAccount(){const u=APP.user;if(!u)return;const n=APP.base.length,e=APP.base.reduce((s,x)=>s+(x.connections||[]).length,0)/2;
   const row=p=>{const src=APP.sources.find(s=>s.provider===p),on=src&&src.status==="connected",label=p==="import"?"Import":GUIDE[p].label;
-    return`<div class="src"><div><b>${label}</b><span class="mono">${on?`Imported · ${esc(Cloud.ago(src.last_synced_at))}`:src&&src.status==="error"?"Last import failed":"Not connected"}</span>${on&&p!=="import"?`<span class="mono next">Next sync · when you import a newer export</span>`:""}</div>
+    return`<div class="src"><div><b>${label}</b><span class="mono">${on?`Imported · ${esc(Cloud.ago(src.last_synced_at))}`:src&&src.status==="error"?"Last import failed":p==="import"?"No imports yet":"Not connected"}</span>${on&&p!=="import"?`<span class="mono next">Next sync · when you import a newer export</span>`:""}</div>
       <div class="acts">${p==="import"?`<button data-act="import">Import data</button>`:`<button data-act="connect-${p}">${on?"Import newer":"Connect"}</button>`}${on?`<button data-act="disconnect-${p}">Disconnect</button>`:""}</div></div>`};
   const hist=APP.history.length?APP.history.slice(0,5).map(h=>`<li><span class="mono">${esc(new Date(h.started_at).toLocaleDateString("en-GB",{day:"numeric",month:"short"}))}</span>${esc(h.provider==="import"?"Import":GUIDE[h.provider]?GUIDE[h.provider].label:h.provider)} · ${h.items_processed} in · +${h.nodes_created} nodes<em class="${esc(h.status)}">${esc(h.status)}</em></li>`).join(""):`<li class="none">No imports yet.</li>`;
   accountEl.innerHTML=`<header><span class="av">${u.avatar?`<img src="${esc(u.avatar)}" alt="" referrerpolicy="no-referrer">`:esc((u.name||"?").charAt(0).toUpperCase())}</span><div><b>${esc(u.name||"You")}</b><span>${esc(u.email||"")}</span></div>
@@ -1071,6 +1074,6 @@ document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!accountEl
   if(!REDUCED)document.body.classList.add("intro");else document.body.classList.remove("intro");
   if(readS("view")==="public")S.view="public";const st=readS("state");if(SKEYS.includes(st))S.state=st;
   const m=location.hash.match(/^#(flow|orb|layers|galaxy|engine)$/);if(m)S.state=m[1];
-  if(MODE==="app")bootApp();else bootLocal("boot");
+  if(MODE==="app"){document.querySelector(".brand p").textContent="Everything I’ve explored, learned and built with AI.";bootApp()}else bootLocal("boot");
   requestAnimationFrame(frame);
 })();
