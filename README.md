@@ -1,6 +1,6 @@
 # My AI Brain
 
-A living 3D map of everything I've explored, learned and built with Claude.
+A living spatial network of everything I’ve explored, learned and built with Claude. Five views of one mind: Flow, Orb, Layers, Galaxy, Engine.
 
 ```bash
 npm run dev     # http://localhost:5173

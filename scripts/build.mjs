@@ -20,10 +20,11 @@ const script = [
 ].join("\n");
 
 const head = page.slice(page.indexOf("<title>"), page.indexOf('<link rel="stylesheet" href="src/styles.css">'));
-const body = page.slice(page.indexOf("<body>") + 6, page.indexOf('<script type="module"'));
+const bodyTag = page.match(/<body[^>]*>/)[0];
+const body = page.slice(page.indexOf(bodyTag) + bodyTag.length, page.indexOf('<script type="module"'));
 
 const fragment = `${head.trim()}\n<style>\n${css}</style>\n${body.trim()}\n<script>\n${script}</script>\n`;
-const standalone = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n${head.trim()}\n<style>\n${css}</style>\n</head>\n<body>\n${body.trim()}\n<script>\n${script}</script>\n</body>\n</html>\n`;
+const standalone = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n${head.trim()}\n<style>\n${css}</style>\n</head>\n${bodyTag}\n${body.trim()}\n<script>\n${script}</script>\n</body>\n</html>\n`;
 
 await mkdir(root + "dist", { recursive: true });
 await writeFile(root + "dist/artifact.html", fragment);

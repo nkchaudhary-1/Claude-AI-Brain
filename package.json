@@ -1,6 +1,6 @@
 {
   "name": "my-ai-brain",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "A living 3D brain of everything I've explored, learned and built with Claude.",
   "type": "module",

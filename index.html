@@ -9,62 +9,72 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500&family=Geist+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="src/styles.css">
 </head>
-<body>
-<canvas id="gl" aria-label="3D brain of knowledge neurons. Search reaches any neuron by keyboard."></canvas>
+<body class="intro">
+<canvas id="gl" aria-label="A living network of everything explored with Claude. Search reaches any neuron by keyboard."></canvas>
+<canvas id="fx" aria-hidden="true"></canvas>
 <div id="labels"></div>
 
+<div class="intro-cap mono" id="intro" aria-hidden="true"><span data-k="0">One idea</span><span data-k="1">Many ideas</span><span data-k="2">Complete intelligence</span></div>
+
 <header class="top">
-  <div class="brand fadeable">
+  <div class="brand ui" style="--d:0">
     <h1>My <b>AI</b> Brain</h1>
     <p>Everything I’ve explored, learned and built with Claude.</p>
   </div>
-  <dl class="metrics fadeable" id="metrics"></dl>
-  <div class="tools">
+  <dl class="metrics ui fade" id="metrics" style="--d:1"></dl>
+  <div class="tools ui" style="--d:2">
     <div class="search" role="search">
       <label class="search-box" for="q">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.3"/><path d="M11 11l3.2 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.3"/><path d="M11 11l3.2 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
         <span class="sr">Search my brain</span>
-        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search my brain…" aria-controls="results" aria-expanded="false">
+        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Find a memory…" aria-controls="results" aria-expanded="false">
+        <kbd class="mono" aria-hidden="true">/</kbd>
       </label>
       <div class="results" id="results" role="listbox" hidden></div>
     </div>
-    <button class="ibtn" id="btnInsights" aria-pressed="false" aria-label="AI insights" title="AI insights"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.5 4 4 1.5-4 1.5L8 12.5 6.5 8.5l-4-1.5 4-1.5L8 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M13 11.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4z" fill="currentColor"/></svg></button>
-    <button class="ibtn" id="btnImport" aria-label="Import Claude data" title="Import Claude data"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <button class="vbtn" id="btnView" title="Private shows everything. Public hides client and personal work."></button>
+    <button class="ibtn mag" id="btnTime" aria-label="Time" title="Time"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+    <button class="ibtn mag" id="btnInsights" aria-pressed="false" aria-label="Insights" title="Insights"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.5 4 4 1.5-4 1.5L8 12.5 6.5 8.5l-4-1.5 4-1.5L8 1.5z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg></button>
+    <button class="ibtn mag" id="btnImport" aria-label="Import Claude data" title="Import Claude data"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button class="vbtn mag" id="btnView" title="Private shows everything. Public hides client and personal work."></button>
   </div>
 </header>
 
-<nav class="nav fadeable" id="nav" aria-label="Brain regions"></nav>
+<nav class="chips ui fade" id="nav" style="--d:3" aria-label="Filter by region"></nav>
+<aside class="readouts ui fade" id="readouts" style="--d:4" aria-label="At a glance"></aside>
 
-<div class="orb-wrap fadeable">
-  <button class="orb" id="orb" aria-label="Show the whole brain"></button>
-  <div class="modes mono" id="modes"><span data-m="0">Explore</span><span data-m="1">Zoom</span><span data-m="2">Discover</span></div>
-</div>
-<div class="caption mono fadeable">A visual map of my conversations, knowledge and ideas.</div>
-
-<div class="timeline fadeable" id="timeline">
-  <div class="tl-row" id="tlRow" role="group" aria-label="Show the brain as of"></div>
-  <div class="tl-track" aria-hidden="true"><i id="tlFill"></i></div>
-  <div class="hint mono" id="hint">Drag to orbit · Scroll to zoom · Click a neuron</div>
+<div class="timeline ui fade" id="timeline" style="--d:5">
+  <div class="tl-head"><span class="mono">Time</span><output class="mono" id="tlOut" for="tl">All time</output></div>
+  <div class="tl-track"><div class="tl-ticks" id="tlTicks"></div><input type="range" id="tl" min="0" max="1000" value="1000" aria-label="Show the brain as of"></div>
 </div>
 
-<button class="back" id="back"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Back to brain</button>
+<div class="states ui" id="states" style="--d:4" role="radiogroup" aria-label="View"></div>
+
+<div class="zoom ui fade" id="zoom" style="--d:5">
+  <span class="lvl mono" id="lvl"></span>
+  <button class="ibtn mag" id="zout" aria-label="Zoom out"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+  <button class="ibtn mag" id="zin" aria-label="Zoom in"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+  <button class="orb mag" id="orb" aria-label="Show the whole brain"></button>
+</div>
+<div class="hint mono ui" id="hint" style="--d:6">Drag to orbit · Scroll to zoom · Click a neuron · 1–5 change view</div>
+
+<div class="ctx mono" id="ctx" hidden><button data-d="-1" aria-label="Previous related neuron">‹</button><span></span><button data-d="1" aria-label="Next related neuron">›</button></div>
+<button class="back" id="back"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Back to the network</button>
 
 <div class="tip" id="tip" role="tooltip"></div>
 
 <aside class="panel" id="panel" aria-label="Knowledge detail" aria-hidden="true">
-  <button class="ibtn p-close" id="pClose" aria-label="Close detail"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+  <button class="ibtn p-close" id="pClose" aria-label="Close detail"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
   <div class="p-scroll" id="pBody"></div>
 </aside>
 
-<div class="drawer" id="drawer" hidden aria-label="AI insights"></div>
+<div class="drawer" id="drawer" hidden aria-label="Insights"></div>
 
 <div class="scrim" id="importScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="impTitle">
-    <button class="ibtn x" id="impClose" aria-label="Close import"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+    <button class="ibtn x" id="impClose" aria-label="Close import"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
     <h2 class="mono" id="impTitle">Import Claude data</h2>
     <label class="drop" id="drop" for="file">
-      <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <strong>Import your Claude history</strong>
       <span>Drop your Claude export (conversations.json) or a brain.json. Everything stays in this browser.</span>
       <span class="cta">Choose file</span>
@@ -72,9 +82,9 @@
       <input id="file" type="file" accept=".json,application/json" class="sr">
     </label>
     <div class="msg" id="impMsg" role="status" aria-live="polite"></div>
-    <div class="pipe"><span>Conversations</span><i>→</i><span>Topics</span><i>→</i><span>Knowledge</span><i>→</i><span>Neurons</span><i>→</i><span>Connections</span></div>
+    <div class="pipe mono"><span>Conversations</span><i>→</i><span>Topics</span><i>→</i><span>Knowledge</span><i>→</i><span>Neurons</span><i>→</i><span>Connections</span></div>
     <p>Chats are grouped into knowledge first, so fifty conversations about Figma become one Figma neuron with its own connections. Here, grouping goes by shared topics. For what you learned, built and concluded in each, run the Claude pass from the project: <code>npm run import -- conversations.json --llm</code></p>
-    <p>The seed brain comes from my project notes, and conversation titles are descriptive until the real export lands. The fine points and mesh are the brain’s structure; the bright orbs are the knowledge.</p>
+    <p>The seed brain comes from my project notes, and conversation titles are descriptive until the real export lands. The fine lines and particles are structure, shaped by how active each area is; only the bright nodes are knowledge.</p>
     <div class="links">
       <button class="lbtn" id="copyJson">Copy data as JSON</button>
       <button class="lbtn" id="restoreSeed">Restore seed brain</button>
@@ -93,6 +103,7 @@
 </div>
 
 <div class="banner" id="banner" hidden></div>
+
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

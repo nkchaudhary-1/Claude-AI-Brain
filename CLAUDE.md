@@ -1,9 +1,9 @@
 # My AI Brain
 
-An interactive 3D brain that visualizes everything Neelesh has explored, learned and built with Claude. Knowledge items are neurons, relationships are connections, and areas of work are color-coded lobes. Private first, with a curated public view later.
+A living spatial knowledge network of everything Neelesh has explored, learned and built with Claude. Knowledge items are neurons, relationships are connections, areas of work are clusters. Not an anatomical brain: the brain is implied by flow and structure. Private first, with a curated public view later.
 
 - Original brief: `docs/brief.md` (17 sections)
-- Visual reference: `docs/ui-reference.png` (a concept board, not a spec; see "Deviations from the reference")
+- Visual reference: `docs/ui-reference.png` (the v0.2 concept board; superseded by the v0.4 art direction below)
 - Live prototype: https://claude.ai/artifact/71NzTJtAW4DnjrNs74uhR4 (private artifact, republish from `dist/artifact.html`)
 
 ## Commands
@@ -30,13 +30,15 @@ src/data/seed.js    CONV (conversation table), SEED (neurons), EDGES (connection
 src/importer/core.js  Importer: parse export → vocabulary vectors → clusters → neurons → merge. Pure JS,
                     shared by the page and the CLI; one top-level name because the build concatenates
 src/main.js         everything else, in this order:
-  MODEL             DOMAINS, REGIONS (lobes), LAYERS, normalize(), exportData()
-  BRAIN GEOMETRY    ELL (6 ellipsoids = sagittal brain), fb() implicit fn, buildShell(), buildMesh(), layout()
-  WEBGL             4 programs: shell points, shell mesh lines, knowledge links, neurons (+signals reuse it)
-  FRAME             camera tween + idle sway, emphasis lerp, signals, projection
-  LABELS            region labels (HTML) + pooled neuron pill labels with overlap rejection
-  INTERACTION       pick(), hover tooltip, select()/closePanel(), renderPanel() with tabs
-  search / nav / timeline / view toggle / metrics / insights
+  MODEL             DOMAINS, REGIONS (clusters), LAYERS (7, incl. Emerging), STATES (5 views), normalize(), exportData()
+  STATES            anchors(), genLines()/genPoints() structure per state, buildScaffold(), neuronLayout(), relax()
+  WEBGL             4 programs: structure lines, structure points, links, neurons (motes, signals, seed point reuse it)
+                    startMorph() blends from wherever things are, even mid-morph
+  FRAME             intro, camera + parallax + idle sway, per-frame neuron/link positions, emphasis, motes, signals, propagate()
+  INTRO / LABELS    intro caption, region labels, pooled neuron labels, contextual controls near the selection
+  FX OVERLAY        2D canvas: readout leader lines, reticles, panel thread, collapse particles, engine + layer marks
+  INTERACTION       pick(), hover, select() = entering a memory, openPanel()/closePanel(), travel() between neurons
+  search wave / filters / states / time slider / view / zoom / metadata readouts / insights
   IMPORT / EMPTY / STRESS (importExport() for raw exports), load(), boot()
 scripts/serve.mjs   dev server
 scripts/build.mjs   inlines CSS + seed + importer + main into single files
@@ -47,16 +49,22 @@ tests/smoke.mjs     5 scenarios: desktop flow, phone flow, 3,000-neuron stress, 
 tests/fixtures/claude-export.mjs  synthetic export in the real conversations.json shape (tests only)
 ```
 
-Draw order each frame: cortex mesh → cortex points → knowledge links → neurons → signals. All use additive blending, with no depth test.
+Draw order each frame: structure lines → structure points → knowledge links → neurons → motes → signals (→ seed point during the intro). All additive blending, no depth test. A 2D `#fx` canvas sits above for leader lines, reticles and the panel's collapse particles.
 
-### Coordinate system
-Brain units (u, v, w): u runs front (−) to back (+), v runs up, w is lateral. The brain faces left. World = `toWorld(u,v,w)` = `[u·RB·XS, v·RB, w·RB]` with RB=12, XS=1.06. The camera at th=0 sits on +z looking at the left hemisphere.
+### Five states, one dataset
+`flow` (Quantum Flow), `orb` (Knowledge Orb), `layers` (Layered Intelligence), `galaxy` (Knowledge Galaxy) and `engine` (Intelligence Engine). Keys 1–5 or the bottom switcher. Each state has region anchors, a camera home (`HOMES`, fitted to the aspect ratio by `HALFW`), structure geometry and a neuron layout. Switching morphs everything with a per-item stagger (`stag()`, same formula in JS and GLSL). Engine centres on the filtered region, or the most active one.
 
 ### Two layers of "neurons"
-1. **Cortex** (`buildShell`, ~16k points + ~11k mesh segments). This is structure, not data. It's generated from the ellipsoid union with fold/sulcus noise, and colored by a soft blend of the lobe centres. It gives the reference's density without inventing numbers.
-2. **Knowledge neurons** (`G.neurons`). This is the real data: bright orbs placed inside their lobe at a depth set by their layer (`LAYERS[].f` = target implicit-function value), then relaxed with a small force pass.
+1. **Structure** (`buildScaffold`: 320–780 lines × 28 vertices, 3.4k–10.8k points, by screen size). Flow lines are traced through an ABC (divergence-free) field inside an ellipsoid with two slow circulations, so a brain is implied without anatomy. Every line belongs to a region, or to none, and keeps that region across states. The number of lines per region follows the data (weight × activity), so dense areas are active knowledge. It is decoration: never counted, never picked.
+2. **Knowledge neurons** (`G.neurons`). The real data, laid out per state by `neuronLayout()` (importance pulls inward in the orb, layer sets height in layers, rank sets the spiral in the galaxy, age pushes older knowledge deeper in flow). Positions are computed on the CPU every frame so links, labels, signals and picking agree.
 
-Never present cortex points as knowledge, and never count them in metrics.
+Never present structure lines or particles as knowledge, and never count them in metrics.
+
+### Motion language
+- Depth of field is in the shaders: `coc()` swells and fades points and lines by distance from the focal plane. `uDof` rises on selection.
+- Signals: normal = slow particle, important (avg importance > .72) = bright pulse, recent = faster, strong (both weight ≥ 4) = three particles. `propagate()` sends light outward from a neuron (select, close, insights, readouts). Search runs the same wave from the top match and gates each match until the wave arrives.
+- Entering a memory: camera dolly and DOF, a propagation wave, then the panel opens with a clip-path circle from the neuron's screen position and staggered `.rv` content. A thread links neuron and panel. Closing folds the panel back into the neuron and sends particles on the fx canvas.
+- Intro (5.2s, boot only): a seed point, particles emitted outward (`aBorn`), lines drawing on, neurons, links growing, then the UI arriving. Captions: One idea → Many ideas → Complete intelligence. Any input speeds it up.
 
 ## Data model
 
@@ -110,11 +118,16 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input is `co
 | 10 | Importer runs offline in the page; the Claude pass is CLI-only | Dropping an export should just work with no key and nothing leaving the browser. The LLM pass needs an API key and costs money, so it's explicit | A hosted version with auth |
 | 11 | Offline pass leaves learned/created/insights empty | Keyword guesses there would be invented data | — |
 | 12 | Claude pass uses `@anthropic-ai/sdk` as a dev dependency, dynamically imported | The page stays zero-dep; offline import works without `npm i` | — |
+| 13 | v0.4: no anatomical brain; five morphing states of one dataset | The art direction asks for intelligence implied by flow, not anatomy; states share data so switching feels like the same mind rearranging | — |
+| 14 | Depth of field and glow in the shaders, not post-processing | Keeps raw WebGL and zero deps; good enough at this density | Real bloom/DOF is wanted (three.js + postprocessing) |
+| 15 | Metadata uses real counts even though the brief's mock shows 1,284 / 326 / 2,941 | "Never invent data" | — |
+| 16 | Emerging layer = exploring / experimenting / in-progress and updated in the last 30 days | Honest, data-derived stand-in for "emerging intelligence" | The Claude insight pass lands |
 
-## Deviations from the reference
-- Real counts, not the board's numbers.
-- The board's "Zoom levels" and "Import thumbnail" tiles are presentation panels, so they're built as behaviour instead: zoom level drives the Explore/Zoom/Discover labels on the orb, and import is a dialog.
-- There's no depth-layer legend any more. Layers still set how deep a neuron sits and show as the type in the detail card.
+## Deviations from the art direction
+- Real counts, not the brief's numbers. "Hundreds of nodes per cluster" comes from structure particles; only the bright nodes are knowledge.
+- Zoom levels (Universe → Cluster → Knowledge → Detail) are driven by camera distance and shown bottom right, not as separate screens.
+- Radial menus aren't built. Controls are compact floating pills with magnetic hover.
+- The panel stays a right-side card on desktop (bottom sheet on phones). It grows out of the neuron rather than slides in.
 
 ## Roadmap
 
@@ -124,14 +137,16 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input is `co
 
 **Later**
 - Move offline grouping to a Web Worker past ~5k conversations (it's ~2s on the main thread at 3k today).
+- Real bloom and depth of field, radial control, and a cursor light that brushes nearby structure.
+- Time scrubbing that also re-lays out by age, not only fades.
 - AI insight layer as meta-neurons (what I keep learning, building, abandoning; unexpected connections), written by Claude and not just computed.
 - Public view published on neelesh.one.
-- Real bloom and depth of field (would justify moving to three.js with post-processing).
 - LOD / progressive loading beyond ~5k neurons (hover picking is O(n) per pointer move today).
 - Split `src/main.js` into modules (model, geometry, renderer, ui). It's one file only because it was one artifact.
 
 ## Known gaps
-- Not yet checked on a real GPU or phone. Glow and point sizes may differ from the SwiftShader screenshots.
+- Not yet checked on a real GPU or phone. Glow, line alpha (tuned on SwiftShader at 1×, boosted ×1.3 on retina) and point sizes may differ.
+- The intro is time-based; on a slow machine the first frames are skipped rather than slowed.
 - Fonts (Geist, Geist Mono via Google Fonts) weren't visible in headless tests. Fallbacks are system sans and mono.
 - Canvas neurons aren't keyboard-reachable. Search is the keyboard path, and labels are focusable buttons.
 - The Claude pass has only run against a mocked API (the wire format and output validation are tested). Its first real run is on the user's export.

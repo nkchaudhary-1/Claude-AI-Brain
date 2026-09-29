@@ -53,7 +53,15 @@ await scenario("desktop", { width: 1440, height: 900 }, [
   (p) => p.keyboard.press("Enter"),
   async (p) => { await p.click(".orbs button >> nth=1", { force: true }); await p.waitForTimeout(200); await p.click('[data-tab="conversations"]'); },
   async (p) => { await p.click("#back"); await p.click("#btnInsights"); },
-  async (p) => { await p.click("#btnInsights"); await p.click('[data-m="7"]', { force: true }); },
+  async (p) => { await p.click("#btnInsights"); await p.$eval("#tl", (el) => { el.value = 400; el.dispatchEvent(new Event("input", { bubbles: true })); }); },
+]);
+// The five views morph the same data; each gets a screenshot once its morph settles.
+await scenario("states", { width: 1440, height: 900 }, [
+  (p) => p.keyboard.press("2"),
+  (p) => p.keyboard.press("3"),
+  (p) => p.keyboard.press("4"),
+  async (p) => { await p.keyboard.press("5"); await p.waitForTimeout(600); },
+  async (p) => { await p.keyboard.press("1"); await p.waitForTimeout(600); },
 ]);
 await scenario("phone", { width: 390, height: 844 }, [
   (p) => p.click('[data-r="ai"]'),
