@@ -6,7 +6,8 @@
 // WebGL runs through SwiftShader so it works without a GPU.
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { makeExport } from "./fixtures/claude-export.mjs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -60,6 +61,17 @@ await scenario("phone", { width: 390, height: 844 }, [
 ], { touch: true });
 await scenario("stress-3000", { width: 1440, height: 900 }, [], { hash: "#stress", wait: 7000 });
 await scenario("empty", { width: 1440, height: 900 }, [], { hash: "#empty", wait: 4000 });
+// Drop a (synthetic) raw claude.ai export: it's grouped in the page and merged into the seed brain.
+await writeFile(out + "claude-export.json", JSON.stringify(makeExport()));
+await scenario("import-export", { width: 1440, height: 900 }, [
+  async (p) => { await p.click("#btnImport"); await p.setInputFiles("#file", out + "claude-export.json"); },
+  async (p) => {
+    const msg = await p.textContent("#impMsg"), banner = await p.textContent("#banner");
+    if (!/Grouped 25 conversations/.test(msg)) throw new Error(`import message was "${msg}"`);
+    if (!/imported/.test(banner)) throw new Error("import banner missing");
+    await p.fill("#q", "auto layout"); await p.keyboard.press("Enter");
+  },
+]);
 
 await browser.close();
 server.kill();

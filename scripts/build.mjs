@@ -8,14 +8,15 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (p) => readFile(root + p, "utf8");
 
-const [page, css, seed, main] = await Promise.all([
-  read("index.html"), read("src/styles.css"), read("src/data/seed.js"), read("src/main.js"),
+const [page, css, seed, importer, main] = await Promise.all([
+  read("index.html"), read("src/styles.css"), read("src/data/seed.js"), read("src/importer/core.js"), read("src/main.js"),
 ]);
 
-// Modules → one classic script: drop the import line and `export` keywords.
+// Modules → one classic script: drop import lines and `export` keywords.
 const script = [
   seed.replace(/^export\s+/gm, ""),
-  main.replace(/^import .*?;\s*$/m, ""),
+  importer.replace(/^export\s+/gm, ""),
+  main.replace(/^import .*?;[ \t]*$/gm, ""),
 ].join("\n");
 
 const head = page.slice(page.indexOf("<title>"), page.indexOf('<link rel="stylesheet" href="src/styles.css">'));

@@ -1,4 +1,5 @@
 import { CONV, SEED } from "./data/seed.js";
+import { Importer } from "./importer/core.js";
 
 /* =========================================================================
    MODEL
@@ -51,7 +52,7 @@ function normalize(raw){
     let domains=Array.isArray(r.domains)&&r.domains.length?r.domains.map(mapDomain):String(r.category||"").split(/[\/,·|]/).filter(Boolean).map(mapDomain);
     if(!domains.length)domains=["product"];domains=[...new Set(domains)];
     const type=LIDX[r.type]!=null?r.type:mapType(r.type||r.layer);
-    const convs=(r.conversations||r.conv||[]).map(c=>typeof c==="string"?(CONV[c]?{...CONV[c]}:{title:c,date:null,summary:""}):{title:String(c.title||"Untitled conversation"),date:c.date||null,summary:String(c.summary||""),approx:!!c.approx});
+    const convs=(r.conversations||r.conv||[]).map(c=>typeof c==="string"?(CONV[c]?{...CONV[c]}:{title:c,date:null,summary:""}):{id:c.id!=null?String(c.id):undefined,title:String(c.title||"Untitled conversation"),date:c.date||null,summary:String(c.summary||""),approx:!!c.approx});
     const cd=convs.map(c=>parseDate(c.date)).filter(Boolean);
     const createdAt=parseDate(r.createdAt)??(cd.length?Math.min(...cd):null);
     const updatedAt=parseDate(r.updatedAt)??(cd.length?Math.max(...cd):createdAt);
@@ -59,7 +60,7 @@ function normalize(raw){
       status:STATUS_LABEL[r.status]?r.status:(type==="idea"?"idea":String(r.status||"exploring").toLowerCase().replace(/\s+/g,"-")),
       visibility:r.visibility==="private"?"private":"public",weight:Math.max(1,Math.min(5,+r.weight||2)),
       description:String(r.description||""),learned:arr(r.learned),created:arr(r.created),insights:arr(r.insights),skills:arr(r.skills),
-      conversations:convs,createdAt,updatedAt,_conn:arr(r.connections),synthetic:!!r.synthetic};
+      conversations:convs,createdAt,updatedAt,_conn:arr(r.connections),synthetic:!!r.synthetic,source:r.source==="import"?"import":undefined};
     n.region=regionOf(n);n.idx=neurons.length;neurons.push(n);byId.set(id,n);
   });
   const adj=neurons.map(()=>new Set()),edges=[],seen=new Set();
@@ -72,7 +73,7 @@ function normalize(raw){
 }
 function exportData(G){return{version:2,neurons:G.neurons.map(n=>({id:n.id,title:n.title,category:n.domains.map(d=>DOMAINS[d].label).join(" / "),domains:n.domains,type:n.type,status:n.status,visibility:n.visibility,weight:n.weight,
   createdAt:n.createdAt?iso(n.createdAt):null,updatedAt:n.updatedAt?iso(n.updatedAt):null,description:n.description,learned:n.learned,created:n.created,insights:n.insights,skills:n.skills,
-  conversations:n.conversations.map(c=>({title:c.title,date:c.date,summary:c.summary})),connections:[...G.adj[n.idx]].map(i=>G.neurons[i].id)}))}}
+  source:n.source,conversations:n.conversations.map(c=>({id:c.id,title:c.title,date:c.date,summary:c.summary})),connections:[...G.adj[n.idx]].map(i=>G.neurons[i].id)}))}}
 const iso=t=>new Date(t).toISOString().slice(0,10);
 const fmtDate=(t,approx)=>t==null?"Date not recorded":(approx?"By ":"")+new Date(t).getDate()+" "+MONTHS[new Date(t).getMonth()]+" "+new Date(t).getFullYear();
 const fmtMonth=t=>t==null?"Not recorded":MONTHS[new Date(t).getMonth()]+" "+new Date(t).getFullYear();
@@ -475,7 +476,7 @@ function renderResults(){const str=q.value.trim();if(!str){results.hidden=true;q
     (hits.length>7?`<div class="r-empty mono" style="font-size:9.5px;padding:8px 10px">${hits.length-7} more lit up in the brain</div>`:"");
   q.setAttribute("aria-activedescendant","opt"+hi)}
 q.addEventListener("input",()=>{if(!G)return;hits=search(q.value);hi=0;renderResults();if(S.sel>=0&&q.value.trim())closePanel();clearTimeout(searchTimer);
-  if(!q.value.trim()){clearFocus();return}S.focus=hits.length?new Set(hits.map(h=>h.n.idx)):null;S.insight=-1;searchTimer=setTimeout(()=>{if(hits.length)frameSet(S.focus)},380);hideHint()});
+  if(!q.value.trim()){clearFocus();return}S.focus=hits.length?new Set(hits.map(h=>h.n.idx)):null;S.insight=-1;const f=S.focus;searchTimer=setTimeout(()=>{if(f&&S.focus===f)frameSet(f)},380);hideHint()});
 q.addEventListener("keydown",e=>{if(e.key==="ArrowDown"){e.preventDefault();hi=Math.min(hi+1,Math.min(hits.length,7)-1);renderResults()}
   else if(e.key==="ArrowUp"){e.preventDefault();hi=Math.max(hi-1,0);renderResults()}else if(e.key==="Enter"&&hits[hi]){e.preventDefault();openHit(hits[hi].n.idx)}
   else if(e.key==="Escape"){q.value="";hits=[];renderResults();clearFocus();q.blur()}});
@@ -559,7 +560,7 @@ let hintGone=false;function hideHint(){if(hintGone)return;hintGone=true;hint.sty
    IMPORT / EMPTY / STRESS
    ========================================================================= */
 const scrim=document.getElementById("importScrim"),impMsg=document.getElementById("impMsg"),emptyEl=document.getElementById("empty"),banner=document.getElementById("banner");
-function store(k,v){try{localStorage.setItem("aibrain:"+k,typeof v==="string"?v:JSON.stringify(v))}catch(e){}}
+function store(k,v){try{localStorage.setItem("aibrain:"+k,typeof v==="string"?v:JSON.stringify(v));return true}catch(e){return false}}
 function readS(k){try{return localStorage.getItem("aibrain:"+k)}catch(e){return null}}
 function dropS(k){try{localStorage.removeItem("aibrain:"+k)}catch(e){}}
 function openImport(){scrim.hidden=false;impMsg.textContent="";impMsg.className="msg";document.getElementById("copyArea").innerHTML="";setTimeout(()=>document.getElementById("impClose").focus(),30)}
@@ -580,11 +581,22 @@ fileIn.addEventListener("change",()=>{if(fileIn.files[0])readFile(fileIn.files[0
 ["dragleave","drop"].forEach(t=>addEventListener(t,()=>dropEl.classList.remove("over")));
 addEventListener("drop",e=>{if(!e.dataTransfer||!e.dataTransfer.files.length)return;e.preventDefault();if(scrim.hidden)openImport();readFile(e.dataTransfer.files[0])});
 function readFile(f){const r=new FileReader();r.onload=()=>{try{const data=JSON.parse(r.result);
-    if(Array.isArray(data)&&data.length&&data[0]&&("chat_messages" in data[0]||"mapping" in data[0]))throw new Error("This looks like a raw Claude export. Turning it into brain.json is the importer’s job, which comes next. For now, import a file in the neuron schema below.");
+    if(Importer.isClaudeExport(data)||(Array.isArray(data)&&data[0]&&"mapping" in data[0])){importExport(data);return}
     const t=normalize(data);if(!t.neurons.length)throw new Error("The file has no neurons in it.");
     load(data,"import");store("data",JSON.stringify(data));impMsg.className="msg";impMsg.textContent=`Imported ${t.neurons.length} neurons and ${t.edges.length} connections.`;setTimeout(closeImport,900);
   }catch(err){impMsg.className="msg err";impMsg.textContent=err instanceof SyntaxError?"That file isn’t valid JSON. Check it opens in a JSON viewer, then try again.":err.message}};
   r.onerror=()=>{impMsg.className="msg err";impMsg.textContent="The file couldn’t be read. Try choosing it again."};r.readAsText(f)}
+// A raw claude.ai export is grouped into knowledge right here, merged into the brain on screen
+// (seed or a previous import) and kept in this browser. The Claude pass lives in the CLI.
+function importExport(data){
+  let base=SEED.neurons;const saved=readS("data");
+  if(saved){try{const b=JSON.parse(saved);const l=Array.isArray(b)?b:b&&b.neurons;if(Array.isArray(l)&&l.length)base=l}catch(e){}}
+  impMsg.className="msg";impMsg.textContent="Grouping your conversations into knowledge…";
+  setTimeout(()=>{try{const {brain,stats}=Importer.fromExport(data,{base,conv:CONV});
+    load(brain,"import");const kept=store("data",JSON.stringify(brain));
+    impMsg.textContent=`Grouped ${stats.conversations.toLocaleString("en-IN")} conversations into ${stats.topics} topics: ${stats.added} new ${stats.added===1?"neuron":"neurons"}, ${stats.updated} merged into existing ones. New neurons are private.`+
+      (kept?"":" It’s too large to keep in this browser, so it resets on reload. Use npm run import for a brain.json you can reopen.");
+    if(kept)setTimeout(closeImport,2400)}catch(err){impMsg.className="msg err";impMsg.textContent=err.message}},40)}
 document.getElementById("schema").textContent=JSON.stringify({neurons:[{id:"neuron-001",title:"AI Design Workflow",category:"AI / Design",type:"project | skill | foundation | experiment | research | idea",status:"built | in-progress | exploring | experimenting | learned | paused | archived",visibility:"public | private",weight:"1–5",createdAt:"2026-03-12",updatedAt:"2026-09-20",description:"…",learned:["…"],created:["…"],insights:["…"],skills:["AI","UX Design"],conversations:[{title:"…",date:"2026-09-20",summary:"…"}],connections:["neuron-002","neuron-017"]}]},null,2);
 function synthetic(N){const r=rng(99),neurons=[],types=LAYERS.map(l=>l.key),ds=["design","ai","product","dev"];
   for(let i=0;i<N;i++){const t=types[Math.min(5,(Math.pow(r(),.8)*6)|0)];neurons.push({id:"syn-"+i,title:"Synthetic "+String(i+1).padStart(4,"0"),domains:[ds[(r()*4)|0]],type:t,status:t==="idea"?"idea":"exploring",weight:1+((r()*r()*5)|0),description:"Synthetic neuron for performance testing.",synthetic:true,connections:[],conversations:[{title:"Synthetic conversation",date:iso(NOW-r()*300*DAY),summary:""}]})}
