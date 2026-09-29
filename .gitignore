@@ -14,7 +14,7 @@ tests/output/
 .env.production
 
 # Personal history: never commit
-data/
+/data/
 .brain-cache/
 conversations.json
 
