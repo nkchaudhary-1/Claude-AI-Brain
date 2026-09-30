@@ -69,6 +69,16 @@ Every table has RLS enabled and no access for `anon`. `profiles` and `brains` ma
 
 ---
 
+## Learn from a link
+
+Paste any article link (header **＋ Add a link**, or the box on the landing page). The page's key ideas become nodes in your brain, connected to what you already know, and each connection says why. It's free: there's no AI, and every key idea is a sentence quoted from the page, never rewritten.
+
+- **How it works:** `api/learn.js` fetches the page safely (public http/https only, private networks blocked, redirects re-checked, 8-second and 2.5 MB limits). It keeps only the article text and picks the most distinctive sentence of each section. Only those snippets reach the browser.
+- **Digging in:** open an idea to see its quote, **Jump to this passage** (opens the original scrolled to that sentence), and what it connects to.
+- **What it can't read:** paywalled or login pages, sites that block bots, pages that build their text with JavaScript, and PDFs. Use **Paste the text** instead; the result is the same.
+- **Where it's saved:** signed in, to your account; otherwise in this browser. On the demo brain, it stays for that visit only.
+- **Setup:** none. It runs on Vercel's free plan with no API key.
+
 ## Import your history
 
 **Claude**

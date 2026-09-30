@@ -18,6 +18,7 @@ npm test             # importer unit tests, RLS tests (PGlite), headless Chromiu
 npm run test:rls     # row level security against the real migration
 npm run test:integration  # Docker: supabase/postgres + postgrest + GoTrue stand-in, full API end to end
 npm run test:importer  # importer unit tests only (no browser, no network)
+npm run test:learn   # learn-from-a-link: extraction, key ideas, linking, URL guards, endpoint refusals
 npm run test:dist    # build, then test the bundled file
 ```
 
@@ -33,6 +34,8 @@ index.html          markup only; loads src/styles.css and src/main.js as an ES m
 src/styles.css      all styles; tokens on :root; single dark world (no light theme by design)
 src/data/seed.js    CONV (conversation table), SEED (neurons), EDGES (connection list). Personal: artifact + dev only
 src/data/demo.js    DEMO: general-knowledge brain (concepts, no people/chats) for the hosted landing, guest and demo
+src/learn/core.js   Learn: page HTML or pasted text → readable blocks → key ideas (exact sentences) → nodes linked into a brain.
+                    Pure JS, shared by the page, /api/learn and tests; no AI
 src/cloud.js        Cloud: fetch wrappers for /api + toVisual() (Brain model → renderer) + changedNeurons() + sync()
 src/importer/core.js  Importer: parse export → vocabulary vectors → clusters → neurons → merge. Pure JS,
                     shared by the page and the CLI; one top-level name because the build concatenates
@@ -50,6 +53,7 @@ src/main.js         everything else, in this order:
   APP               bootApp() → loading steps → landing (guest) | openBrain() (user) → welcome / empty / error stages,
                     auth card, connect card, account sheet. bootLocal() for local mode.
 api/                Vercel functions; api/_lib is shared (never routed). See README → Architecture.
+                    api/learn.js + api/_lib/fetchpage.js: the free link reader (SSRF-safe fetch → Learn)
 supabase/           migrations (schema + RLS + signup trigger), config.toml, magic-link template
 scripts/serve.mjs   dev/start server: static + /api handlers, .env.local, vercel.json headers in --dist
 scripts/build.mjs   dist/ (demo brain; fails if any personal seed text leaks) + dist-artifact/artifact.html (personal seed)
@@ -86,7 +90,8 @@ A neuron is authored in `src/data/seed.js` or imported as `brain.json` (schema i
 ```js
 { id, title, domains:["design","ai",...], type, status, visibility:"public"|"private", weight:1-5,
   createdAt?, updatedAt?, description, learned:[], created:[], insights:[], skills:[],
-  conversations:[{id?,title,date,summary}] | conv:["key into CONV"], connections:[id | {id, why}], source?:"import" }
+  conversations:[{id?,title,date,summary}] | conv:["key into CONV"], connections:[id | {id, why}], source?:"import",
+  linkWhy?:{otherId: why}, link?:{kind:"source"|"idea", url, site, keywords, published?, readMinutes?, quote?, section?, source?} }
 ```
 
 - `type`: foundation | skill | project | experiment | research | idea. This sets the layer, meaning depth inside the lobe.
@@ -96,6 +101,16 @@ A neuron is authored in `src/data/seed.js` or imported as `brain.json` (schema i
 - `density` scales brightness and size down past 250 neurons so large brains don't blow out.
 - A connection may carry its reason: `{id, why}` (the demo brain writes one for every link). Otherwise `linkWhy()` computes it from what the two share, in order: a conversation, a skill, distinctive words (rare across the brain), an area; else "Similar topics in your chats" (imports) or "Linked by hand". Never guessed.
 - `source:"import"` marks neurons the importer created; conversation `id` is the claude.ai uuid. Both drive re-import merging.
+
+## Learn from a link (v0.6, free)
+
+The answer to "what is this for?": paste anything you read, and its key ideas join your brain, connected to what you know. **No AI, no paid service** (the user's call): nothing is rewritten, so nothing can be made up.
+- **Read** (`api/learn.js`, POST `{url}`, same-site, ~12/min per IP): `fetchPage()` allows only http(s) on 80/443, no credentials, no private/loopback/link-local/metadata addresses (IPv4, IPv6, mapped, decimal forms), resolves DNS once and pins the socket to the checked address, re-checks every redirect, 8s / 2.5 MB caps, HTML or text only. Only the digest goes back; the page's full text never leaves the function.
+- **Digest** (`Learn.extractHtml` → `Learn.digest`): the `<article>`/`<main>` with the most paragraphs; nav, footer, forms, cookie/subscribe junk and link-heavy blocks dropped. Sentences are scored by the article's own vocabulary (title/heading/description boosted). With 2+ headed sections, one idea per top section, titled by its heading; otherwise MMR picks diverse sentences, titled by their two strongest words. Every idea's `quote` is a verbatim sentence.
+- **Link** (`Learn.toNeurons`): a source node (type research, private) + idea nodes, ids from the URL hash (re-pasting replaces). An idea links to an existing node only when one of its keywords is a *strong* term of that node (title, skills, keywords, or repeated in its text), not generic, and rare in the brain; a single shared word must appear in both titles (stops homonyms like "permission prompts" ↔ "prompt writing"). The reason is stored in `linkWhy` ("Both about habit").
+- **Where it goes:** signed in → account (`link` and `linkWhy` live in `knowledge_nodes.metadata`); this browser's brain → localStorage; the demo → this visit only (banner). Local mode (the artifact) has no server, so it offers paste-the-text only.
+- **Dig in:** the panel shows "Read the original ↗", the key ideas, topics, and for an idea its quote plus "Jump to this passage ↗" (URL text fragments, `Learn.passageUrl`).
+- Can't read: paywalls/logins, pages that render their text with JavaScript, PDFs. Each says so in plain words and offers paste-the-text.
 
 ## Importer
 
@@ -114,6 +129,7 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input comes 
 - **Client confidentiality.** The Gold Investment app is client work. It and anything derived from it (SIP autonomy dial, the component library) stay `visibility:"private"`. Public view must never show them.
 - **Private first.** The Private view is the default. Public is a curated subset. Anything imported without an explicit visibility is stored private.
 - **The hosted site never contains personal seed data, public or private.** It uses `src/data/demo.js` (general knowledge). `scripts/build.mjs` fails if any seed title, description, list item or conversation text reaches the bundle, and strips `<p class="local-only">` notes from the public page. A visitor’s import on the hosted site starts from their own data, never the demo (`importBase()`).
+- **Learned knowledge is quoted, never paraphrased.** Key ideas are exact sentences from the source; titles come from its headings or its own words. Don't add rewriting without an explicit AI decision (it would cost money and could invent).
 - **Honest providers.** Don't add fake "connect" or "sync" for Claude/ChatGPT. Export → import until an official mechanism exists.
 - Conversation titles in the seed are descriptive labels, not real chat titles. Replace them when the export is imported.
 - Neurons are grouped knowledge. Never draw one neuron per conversation.
@@ -143,6 +159,7 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input comes 
 | 20 | Grouping runs in the browser; only derived knowledge is uploaded | Privacy, and exports can exceed Vercel's 4.5 MB body limit | — |
 | 21 | Hosted demo = a general-knowledge brain, not the public part of the personal seed | The remaining public nodes were still Neelesh’s real projects; a concept brain is useful to read and personal to no one | Public view launches on neelesh.one |
 | 22 | Explain links in the panel + a `?` legend + a skippable 3-step guide, not a permanent overlay | Comprehension without cluttering the brain; the reason sits where the curiosity is (an open node) | Hovering a line directly, or Claude-written reasons from the import pass |
+| 23 | v0.6: "paste a link" as the core loop, free (extractive, no AI) | People didn't see what the brain was for; reading is daily, exports are rare. The user wanted zero running cost, and quoting keeps "never invent data" | People ask for plain-language rewrites or Q&A, and a budget exists |
 | 16 | Emerging layer = exploring / experimenting / in-progress and updated in the last 30 days | Honest, data-derived stand-in for "emerging intelligence" | The Claude insight pass lands |
 
 ### Making the map understandable

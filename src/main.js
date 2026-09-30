@@ -1,4 +1,5 @@
 import { CONV, SEED } from "./data/seed.js";
+import { Learn } from "./learn/core.js";
 import { Importer } from "./importer/core.js";
 import { Cloud } from "./cloud.js";
 
@@ -37,6 +38,10 @@ const parseDate=s=>{if(!s)return null;const t=Date.parse(s);return isNaN(t)?null
 const arr=v=>Array.isArray(v)?v.filter(x=>x!=null&&x!=="").map(String):[];
 // a link is an id, or {id, why} when the reason is known (the demo brain writes them)
 const linkIds=v=>(Array.isArray(v)?v:[]).map(c=>c&&typeof c==="object"?c.id:c).filter(x=>x!=null&&x!=="").map(String);
+const whyMap=o=>o&&typeof o==="object"&&!Array.isArray(o)?Object.fromEntries(Object.entries(o).filter(([,w])=>typeof w==="string"&&w).map(([k,w])=>[String(k),w])):{};
+// a node learned from the web (Learn): where it came from, and the exact quote for ideas
+const linkOf=l=>l&&typeof l==="object"&&(l.kind==="source"||l.kind==="idea")?{kind:l.kind,url:typeof l.url==="string"?l.url:null,site:String(l.site||""),published:l.published||null,
+  readMinutes:+l.readMinutes||null,keywords:arr(l.keywords).slice(0,10),quote:l.quote?String(l.quote):"",section:l.section?String(l.section):null,source:l.source?String(l.source):null}:null;
 const linkWhys=v=>Object.fromEntries((Array.isArray(v)?v:[]).filter(c=>c&&typeof c==="object"&&c.id!=null&&c.why).map(c=>[String(c.id),String(c.why)]));
 function regionOf(n){if(n.type==="research")return"research";if(n.type==="idea")return"ideas";const d=n.domains.find(d=>d!=="career");return d||"design"}
 function hashId(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
@@ -59,7 +64,7 @@ function normalize(raw){
       status:STATUS_LABEL[r.status]?r.status:(type==="idea"?"idea":String(r.status||"exploring").toLowerCase().replace(/\s+/g,"-")),
       visibility:r.visibility==="private"?"private":"public",weight:Math.max(1,Math.min(5,+r.weight||2)),
       description:String(r.description||""),learned:arr(r.learned),created:arr(r.created),insights:arr(r.insights),skills:arr(r.skills),
-      conversations:convs,createdAt,updatedAt,_conn:linkIds(r.connections),_why:linkWhys(r.connections),synthetic:!!r.synthetic,source:r.source==="import"?"import":undefined};
+      conversations:convs,createdAt,updatedAt,_conn:linkIds(r.connections),_why:{...whyMap(r.linkWhy),...linkWhys(r.connections)},link:linkOf(r.link),synthetic:!!r.synthetic,source:r.source==="import"?"import":undefined};
     n.region=regionOf(n);n.idx=neurons.length;neurons.push(n);byId.set(id,n);
   });
   const adj=neurons.map(()=>new Set()),edges=[],eIdx=new Map(),why=new Map();
@@ -79,7 +84,8 @@ function normalize(raw){
 const edgeOf=(a,b)=>{const k=Math.min(a,b)*1e6+Math.max(a,b);return G.eIdx.has(k)?G.eIdx.get(k):-1};
 function exportData(G){return{version:2,neurons:G.neurons.map(n=>({id:n.id,title:n.title,category:n.domains.map(d=>DOMAINS[d].label).join(" / "),domains:n.domains,type:n.type,status:n.status,visibility:n.visibility,weight:n.weight,
   createdAt:n.createdAt?iso(n.createdAt):null,updatedAt:n.updatedAt?iso(n.updatedAt):null,description:n.description,learned:n.learned,created:n.created,insights:n.insights,skills:n.skills,
-  source:n.source,conversations:n.conversations.map(c=>({id:c.id,title:c.title,date:c.date,summary:c.summary})),connections:[...G.adj[n.idx]].map(i=>G.neurons[i].id)}))}}
+  source:n.source,conversations:n.conversations.map(c=>({id:c.id,title:c.title,date:c.date,summary:c.summary})),connections:[...G.adj[n.idx]].map(i=>G.neurons[i].id),
+  ...(n.link?{link:n.link}:{}),linkWhy:Object.fromEntries([...G.adj[n.idx]].map(i=>[G.neurons[i].id,G.why.get(Math.min(n.idx,i)*1e6+Math.max(n.idx,i))]).filter(([,w])=>w))}))}}
 const iso=t=>new Date(t).toISOString().slice(0,10);
 const fmtDate=(t,approx)=>t==null?"Date not recorded":(approx?"By ":"")+new Date(t).getDate()+" "+MONTHS[new Date(t).getMonth()]+" "+new Date(t).getFullYear();
 const fmtMonth=t=>t==null?"Not recorded":MONTHS[new Date(t).getMonth()]+" "+new Date(t).getFullYear();
@@ -669,6 +675,17 @@ function renderCtx(){const n=S.rel.length;ctxEl.querySelector("span").textConten
   ctxEl.querySelectorAll("button").forEach(b=>b.disabled=!n)}
 ctxEl.addEventListener("click",e=>{const b=e.target.closest("button[data-d]");if(!b||!S.rel.length)return;const n=S.rel.length;const idx=((S.relIdx<0?(+b.dataset.d>0?-1:0):S.relIdx)+ +b.dataset.d+n)%n;
   const rel=S.rel,to=rel[idx];travel(to,"rel");setTimeout(()=>{S.rel=rel;S.relIdx=idx;renderCtx()},REDUCED?0:450)});
+// Nodes learned from the web: where they came from, the key ideas, and a way back into the original.
+function safeHref(u){try{const x=new URL(u);return /^https?:$/.test(x.protocol)?x.href:null}catch(e){return null}}
+function webSection(n,rel){const L=n.link,href=safeHref(L.url);
+  if(L.kind==="source"){const kids=rel.filter(m=>m.link&&m.link.source===n.id);
+    const meta=[L.site,L.readMinutes?`${L.readMinutes} min read`:"",L.published&&parseDate(L.published)?fmtDate(parseDate(L.published)):""].filter(Boolean).map(esc).join(" · ");
+    return `<section class="sec web rv" style="--i:5"><h4 class="mono">From the web</h4>${meta?`<p class="web-meta">${meta}</p>`:""}${href?`<div class="web-acts"><a class="lbtn ext" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Read the original ↗</a></div>`:""}</section>
+    ${kids.length?`<section class="sec rv" style="--i:6"><h4 class="mono">Key ideas · ${kids.length}</h4><p class="why-note">Each one is a sentence quoted from the page. Nothing is rewritten.</p><div class="orbs rel">${kids.map(m=>`<button data-rel="${m.idx}" style="--c:${REGIONS[m.region].color}"><span class="o"></span><span class="rt">${esc(m.title)}</span><span class="rw">${esc(short(m.description,120))}</span></button>`).join("")}</div></section>`:""}
+    ${L.keywords.length?`<section class="sec rv" style="--i:7"><h4 class="mono">Mostly about</h4><div class="skills">${L.keywords.map(k=>`<span>${esc(k)}</span>`).join("")}</div></section>`:""}`}
+  const src=G.byId.get(L.source),jump=href?safeHref(Learn.passageUrl(href,L.quote)):null;
+  return `<section class="sec web rv" style="--i:5"><h4 class="mono">From the web</h4>${L.section?`<p class="web-meta">Section · ${esc(L.section)}</p>`:""}
+    <div class="web-acts">${jump?`<a class="lbtn ext" href="${esc(jump)}" target="_blank" rel="noopener noreferrer">Jump to this passage ↗</a>`:""}${src?`<button class="lbtn" data-rel="${src.idx}">From: ${esc(short(src.title,48))}</button>`:""}</div></section>`}
 function renderPanel(anim){
   const n=G.neurons[S.sel];if(!n)return;
   const rel=[...G.adj[n.idx]].filter(j=>visible[j]).map(j=>G.neurons[j]).sort((a,b)=>b.size-a.size);
@@ -676,13 +693,18 @@ function renderPanel(anim){
   const convs=[...n.conversations].sort((a,b)=>(parseDate(b.date)||0)-(parseDate(a.date)||0));
   const trail=S.trail.length>1?`<nav class="trail rv" style="--i:0" aria-label="Your path">${S.trail.map((t,k)=>k===S.trail.length-1?`<span class="cur">${esc(G.neurons[t].title)}</span>`:`<button data-trail="${t}">${esc(G.neurons[t].title)}</button><span aria-hidden="true">→</span>`).join("")}</nav>`:"";
   const col=REGIONS[n.region].color,cat=[...n.domains.map(d=>DOMAINS[d].label),TYPE_LABEL[n.type]].join(" · ");
-  const tabs=[["overview","Overview",0],["learnings","Learned",n.learned.length],["creations","Created",n.created.length],["conversations","Conversations",convs.length]];
+  const L=n.link;if(L)tab="overview";
+  const tabs=L?[["overview","Overview",0]]:[["overview","Overview",0],["learnings","Learned",n.learned.length],["creations","Created",n.created.length],["conversations","Conversations",convs.length]];
+  const connected=list=>list.length?`<section class="sec rv" style="--i:7"><h4 class="mono">Connected to · ${list.length}</h4><p class="why-note">Each line in the map joins related knowledge. Here’s why these are linked.</p><div class="orbs rel">${list.map(m=>`<button data-rel="${m.idx}" style="--c:${REGIONS[m.region].color}"><span class="o"></span><span class="rt">${esc(m.title)}</span><span class="rw">${esc(linkWhy(n,m))}</span></button>`).join("")}</div></section>`:"";
   const none=msg=>`<p class="sparse">${msg}</p>`;let body="";
-  if(tab==="overview"){const ins=n.insights;
+  if(tab==="overview"&&L){const others=L.kind==="source"?rel.filter(m=>!(m.link&&m.link.source===n.id)):rel;
+    body=`${webSection(n,rel)}<dl class="times rv" style="--i:6"><div><dt class="mono">Added</dt><dd>${fmtMonth(n.createdAt)}</dd></div><div><dt class="mono">Kind</dt><dd>${L.kind==="source"?"Article":"Key idea"}</dd></div><div><dt class="mono">Links</dt><dd>${String(n.degree).padStart(2,"0")}</dd></div></dl>
+    ${connected(others)}`}
+  else if(tab==="overview"){const ins=n.insights;
     body=`${ins.length?`<section class="sec ins rv" style="--i:5"><h4 class="mono">Key insights</h4>${list(ins.slice(0,5))}</section>`:""}
     ${!ins.length&&!n.learned.length&&!n.created.length?`<div class="rv" style="--i:5">${none("Insights for this neuron haven’t been recorded yet. They fill in as more conversations are imported.")}</div>`:""}
     <dl class="times rv" style="--i:6"><div><dt class="mono">Started</dt><dd>${fmtMonth(n.createdAt)}</dd></div><div><dt class="mono">Last explored</dt><dd>${fmtMonth(n.updatedAt)}</dd></div><div><dt class="mono">Links</dt><dd>${String(n.degree).padStart(2,"0")}</dd></div></dl>
-    ${rel.length?`<section class="sec rv" style="--i:7"><h4 class="mono">Connected to · ${rel.length}</h4><p class="why-note">Each line in the map joins related knowledge. Here’s why these are linked.</p><div class="orbs rel">${rel.map(m=>`<button data-rel="${m.idx}" style="--c:${REGIONS[m.region].color}"><span class="o"></span><span class="rt">${esc(m.title)}</span><span class="rw">${esc(linkWhy(n,m))}</span></button>`).join("")}</div></section>`:""}`}
+    ${connected(rel)}`}
   else if(tab==="learnings")body=`<div class="rv" style="--i:5">${n.learned.length?`<section class="sec">${list(n.learned)}</section>`:none("No learnings recorded for this neuron yet.")}</div>`;
   else if(tab==="creations")body=`<div class="rv" style="--i:5">${n.created.length?`<section class="sec">${list(n.created)}</section>`:none("Nothing recorded as created from this neuron yet.")}${n.skills.length?`<section class="sec"><h4 class="mono">Skills involved</h4><div class="skills">${n.skills.map(s=>`<span>${esc(s)}</span>`).join("")}</div></section>`:""}</div>`;
   else body=convs.length?`<div class="convs rv" style="--i:5">${convs.map(c=>`<div class="conv"><span class="cd mono">${c.date?fmtDate(parseDate(c.date),c.approx):"Date not recorded"}</span><span class="ct">${esc(c.title)}</span>${c.summary?`<span class="cs">${esc(c.summary)}</span>`:""}</div>`).join("")}</div>`:none("No conversations are linked to this neuron yet. They appear once your Claude history is imported.");
@@ -694,8 +716,8 @@ function renderPanel(anim){
     <div class="p-status rv" style="--i:3"><span class="st mono ${esc(n.status)}"><i></i>${STATUS_LABEL[n.status]||esc(n.status)}</span><span class="p-date mono">${fmtMonth(n.updatedAt)}</span>
       ${n.visibility==="private"?`<span class="priv mono"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2" stroke="currentColor" stroke-width="1.3"/></svg>Private</span>`:""}</div>
   </div>
-  ${n.description?`<p class="p-desc rv" style="--i:3">${esc(n.description)}</p>`:""}
-  <div class="tabs rv" style="--i:4" role="tablist">${tabs.map(([k,l,c])=>`<button role="tab" data-tab="${k}" aria-selected="${tab===k}">${l}${c?`<sup>${c}</sup>`:""}</button>`).join("")}</div>
+  ${n.description?(L&&L.kind==="idea"?`<blockquote class="p-quote rv" style="--i:3">“${esc(n.description)}”</blockquote>`:`<p class="p-desc rv" style="--i:3">${esc(n.description)}</p>`):""}
+  ${tabs.length>1?`<div class="tabs rv" style="--i:4" role="tablist">${tabs.map(([k,l,c])=>`<button role="tab" data-tab="${k}" aria-selected="${tab===k}">${l}${c?`<sup>${c}</sup>`:""}</button>`).join("")}</div>`:""}
   <div class="tabpanel" role="tabpanel">${body}</div>`;
   pBody.classList.remove("anim");if(anim){void pBody.offsetWidth;pBody.classList.add("anim")}
   panel.setAttribute("aria-labelledby","pTitle");
@@ -744,6 +766,7 @@ function renderHelp(){
   </ul>
   <h3 class="mono">What you can do</h3>
   <ul class="doings">
+    <li><kbd>＋</kbd><span>Add a link: any article’s key ideas become nodes, connected to what you know</span></li>
     <li><kbd>${COARSE?"Search":"/"}</kbd><span>Find a memory by name</span></li>
     <li><kbd>${COARSE?"Tap":"Click"}</kbd><span>Open a node: what you learned, made, and the chats behind it</span></li>
     <li><kbd>${COARSE?"Views":"1–5"}</kbd><span>See the same brain five ways</span></li>
@@ -762,7 +785,7 @@ const tourEl=document.getElementById("tour");
 const TOUR=[
   {t:"Each node is something you’ve explored.",d:"Many chats about one topic become one node. Bigger means explored more. Brighter means more recent."},
   {t:"Lines connect related ideas.",d:"Every line joins two related pieces of knowledge. Open any node to see why they’re linked."},
-  {t:"Now it’s yours to explore.",d:COARSE?"Search a topic, tap any node, or switch views below. The ? button explains the map any time.":"Search with /, click any node, or press 1–5 to see the same brain five ways. The ? button explains the map any time."}];
+  {t:"Now make it yours.",d:COARSE?"Tap ＋ and paste any article link: its key ideas join the map, connected to what’s already here. Or tap any node to explore.":"Press ＋ Add a link and paste any article: its key ideas join the map, connected to what’s already here. Or click any node, or press 1–5 for other views."}];
 let tourK=-1,tourSeen=!!readS("toured"),tourWait=0;
 function hubIdx(){const v=G.neurons.filter(n=>visible[n.idx]).sort((a,b)=>b.degree-a.degree||b.size-a.size);return v.length?v[0].idx:-1}
 function startTour(force){if(!force&&(tourSeen||readS("toured")))return;tourSeen=true;tourStep(0)}
@@ -954,6 +977,51 @@ async function readFiles(list,ui=IMPORT_UI){
     if(ownBrain()){commitBrain({neurons:Importer.merge(APP.base,neurons,{conv:CONV}).neurons},"import",`Read ${t.neurons.length} neurons and ${t.edges.length} connections.`,ui);return}
     load(data);store("data",JSON.stringify(data));localBanner();ui.msg.className="msg";ui.msg.textContent=`Imported ${t.neurons.length} neurons and ${t.edges.length} connections.`;setTimeout(ui.close,900);
   }catch(err){ui.msg.className="msg err";ui.msg.textContent=err instanceof SyntaxError?"That file isn’t valid JSON. Check it opens in a JSON viewer, then try again.":err instanceof DOMException?"The file couldn’t be read. Try choosing it again.":err.message}}
+/* LEARN — paste a link (or text); its key ideas become nodes linked into the brain.
+   Free: no AI, nothing rewritten. Every idea is a sentence quoted from the page (src/learn/core.js). */
+const learnScrim=document.getElementById("learnScrim"),learnMsg=document.getElementById("learnMsg"),learnUrl=document.getElementById("learnUrl"),learnText=document.getElementById("learnText");
+const LEARN_UI={msg:learnMsg,close:()=>closeLearn()};
+let learnBusy=false;
+function openLearn(url){closeHelp();if(tourK>=0)endTour();learnScrim.hidden=false;learnMsg.textContent="";learnMsg.className="msg";if(url)learnUrl.value=url;
+  const canFetch=MODE==="app";document.getElementById("learnForm").hidden=!canFetch;document.getElementById("learnLocal").hidden=canFetch;document.getElementById("learnPaste").open=!canFetch;
+  setTimeout(()=>(canFetch?learnUrl:learnText).focus(),60)}
+function closeLearn(){learnScrim.hidden=true}
+// the reader's answer is untrusted: keep only strings of sane length
+function cleanDigest(j){const S=(v,n)=>typeof v==="string"?v.slice(0,n):"",A=(v,n)=>Array.isArray(v)?v.filter(x=>typeof x==="string").map(x=>x.slice(0,60)).slice(0,n):[];
+  const p=j&&j.page||{};const ideas=(Array.isArray(j&&j.ideas)?j.ideas:[]).slice(0,8).map(x=>({title:S(x&&x.title,90),quote:S(x&&x.quote,600),section:S(x&&x.section,140)||null,keywords:A(x&&x.keywords,5)})).filter(x=>x.title&&x.quote);
+  return {page:{url:S(p.url,2000),title:S(p.title,200)||"Untitled page",site:S(p.site,100),description:S(p.description,400),published:S(p.published,10)||null},summary:S(j.summary,400),ideas,keywords:A(j.keywords,10),
+    domains:A(j.domains,2).filter(d=>DOMAINS[d]),readMinutes:Math.max(1,Math.min(600,Math.round(+j.readMinutes||1)))}}
+async function learnFromUrl(raw,ui=LEARN_UI){let url=String(raw||"").trim();if(!url||learnBusy)return;if(!/^https?:\/\//i.test(url))url="https://"+url;
+  learnBusy=true;ui.msg.className="msg";ui.msg.textContent="Reading the page…";
+  try{const r=await fetch("/api/learn",{method:"POST",headers:{"content-type":"application/json","x-brain-request":"1"},body:JSON.stringify({url})});
+    const j=await r.json().catch(()=>null);
+    if(!r.ok||!j||!Array.isArray(j.ideas)){ui.msg.className="msg err";ui.msg.textContent=(j&&j.error&&j.error.message)||"We couldn’t read that page. Paste the article text instead.";return}
+    const dg=cleanDigest(j);if(!dg.ideas.length){ui.msg.className="msg err";ui.msg.textContent="We couldn’t find key ideas on that page. Paste the article text instead.";return}
+    await addLearned(dg,ui)}
+  catch(e){ui.msg.className="msg err";ui.msg.textContent="We couldn’t reach the link reader. Check your connection, or paste the text instead."}
+  finally{learnBusy=false}}
+async function learnFromText(text,ui=LEARN_UI){const dg=Learn.digest(Learn.fromText(text));
+  if(!dg||!dg.ideas.length){ui.msg.className="msg err";ui.msg.textContent="There isn’t enough writing there to find key ideas. Paste a few full paragraphs.";return}
+  await addLearned(dg,ui)}
+// Signed in → your account. This browser's brain → here. The demo → this visit only (it isn't anyone's to keep).
+async function addLearned(dg,ui){
+  const demo=MODE==="app"&&!ownBrain()&&!localBrain();
+  const current=ownBrain()?APP.base:demo?exportData(G).neurons:importBase();
+  const r=Learn.toNeurons(dg,current);
+  const brain={neurons:[...current.filter(n=>n.id!==r.sourceId&&!(n.link&&n.link.source===r.sourceId)),...r.neurons]};
+  const text=`Mapped “${short(dg.page.title,60)}”: ${dg.ideas.length} key ${dg.ideas.length===1?"idea":"ideas"}${r.linked?`, ${r.linked} ${r.linked===1?"link":"links"} to what you know`:""}.`;
+  if(demo){load(brain,"regrow");ui.msg.className="msg";ui.msg.textContent=text;setBanner("Added to the demo for this visit","Keep my own brain",()=>openAuth());setTimeout(ui.close,900)}
+  else await commitBrain(brain,"import",text,ui);
+  focusLearned(r.sourceId)}
+function focusLearned(id,k=0){const n=G&&G.byId.get(id);
+  if(n&&visible[n.idx]&&learnScrim.hidden){tourSeen=true;select(n.idx);propagate(n.idx,{depth:2});return}
+  if(k<60)setTimeout(()=>focusLearned(id,k+1),150)}
+document.getElementById("btnLearn").addEventListener("click",()=>openLearn());
+document.getElementById("learnClose").addEventListener("click",closeLearn);
+learnScrim.addEventListener("click",e=>{if(e.target===learnScrim)closeLearn()});
+document.getElementById("learnForm").addEventListener("submit",e=>{e.preventDefault();learnFromUrl(learnUrl.value)});
+document.getElementById("learnTextGo").addEventListener("click",()=>learnFromText(learnText.value));
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!learnScrim.hidden)closeLearn()});
 // The export email's manifest lists one-time links; the chats are in the "conversations" zips.
 function showManifest(files,ui){
   const convs=files.filter(f=>f.category==="conversations"&&f.url),many=convs.length>1;
@@ -1085,6 +1153,7 @@ function bootLocal(how){
 /* landing + auth */
 $("landingBuild").addEventListener("click",()=>openAuth());
 $("landingDemo").addEventListener("click",()=>{stage(null);if(!localBrain())setBanner("Demo brain · explore freely","Build my own",()=>openAuth())});
+$("landingLearn").addEventListener("submit",e=>{e.preventDefault();const u=$("landingUrl").value.trim();if(!u)return;stage(null);openLearn(u);learnFromUrl(u)});
 let authFromLanding=false;
 function openAuth(message,isError){authFromLanding=!$("landing").hidden;$("authEmail").hidden=true;$("authEmailBtn").hidden=false;
   const m=$("authMsg");m.className=isError?"msg err":"msg";m.textContent=message||"";stage("auth")}

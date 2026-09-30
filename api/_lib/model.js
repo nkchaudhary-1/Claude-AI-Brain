@@ -63,10 +63,31 @@ export function cleanNode(raw, now = Date.now()) {
         visibility: raw.visibility === "public" ? "public" : "private",
         learned: list(raw.learned), created: list(raw.created), insights: list(raw.insights), skills: list(raw.skills, 20),
         conversations, first_seen: firstSeen, last_seen: lastSeen, source: raw.source === "import" ? "import" : "curated",
+        ...cleanLink(raw.link), ...cleanWhy(raw.linkWhy, key),
       },
     },
     connections: [...new Set((Array.isArray(raw.connections) ? raw.connections : []).map(cleanKey).filter((k) => k && k !== key))].slice(0, LIMITS.connections),
   };
+}
+
+// A node learned from the web: where it came from and the exact quote. Only http(s) links are kept.
+function cleanLink(l) {
+  if (!l || typeof l !== "object" || !["source", "idea"].includes(l.kind)) return {};
+  let url = null;
+  try { const u = new URL(String(l.url || "")); if (/^https?:$/.test(u.protocol) && u.href.length <= 2000) url = u.href; } catch {}
+  const mins = Math.round(Number(l.readMinutes));
+  return { link: {
+    kind: l.kind, url, site: str(l.site, 100), keywords: list(l.keywords, 10).map((k) => k.slice(0, 40)),
+    ...(l.kind === "source" ? { published: day(l.published), readMinutes: mins >= 1 && mins <= 600 ? mins : null }
+      : { quote: str(l.quote, 600), section: str(l.section, 140) || null, source: cleanKey(l.source) }),
+  } };
+}
+// Why this node links to others: { otherKey: "Both about habit" }.
+function cleanWhy(w, key) {
+  if (!w || typeof w !== "object") return {};
+  const out = {};
+  for (const [k, v] of Object.entries(w).slice(0, LIMITS.connections)) { const ck = cleanKey(k); if (ck && ck !== key && typeof v === "string" && v.trim()) out[ck] = str(v, 120); }
+  return Object.keys(out).length ? { why: out } : {};
 }
 
 export function toClientNode(row) {
@@ -76,6 +97,7 @@ export function toClientNode(row) {
     visibility: m.visibility === "public" ? "public" : "private", weight: row.importance, createdAt: m.first_seen || null, updatedAt: m.last_seen || null,
     description: row.description || "", learned: m.learned || [], created: m.created || [], insights: m.insights || [], skills: m.skills || [],
     conversations: m.conversations || [], ...(m.source === "import" ? { source: "import" } : {}),
+    ...(m.link ? { link: m.link } : {}), ...(m.why ? { linkWhy: m.why } : {}),
   };
 }
 

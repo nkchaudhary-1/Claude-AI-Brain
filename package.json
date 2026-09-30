@@ -9,11 +9,12 @@
     "build": "node scripts/build.mjs",
     "start": "node scripts/serve.mjs --dist",
     "import": "node scripts/import.mjs",
-    "test": "node tests/importer.mjs && node tests/rls.mjs && node tests/smoke.mjs",
+    "test": "node tests/importer.mjs && node tests/learn.mjs && node tests/rls.mjs && node tests/smoke.mjs",
     "test:importer": "node tests/importer.mjs",
     "test:rls": "node tests/rls.mjs",
+    "test:learn": "node tests/learn.mjs",
     "test:integration": "node tests/integration.mjs",
-    "test:dist": "node scripts/build.mjs && node tests/importer.mjs && node tests/smoke.mjs --dist"
+    "test:dist": "node scripts/build.mjs && node tests/importer.mjs && node tests/learn.mjs && node tests/smoke.mjs --dist"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

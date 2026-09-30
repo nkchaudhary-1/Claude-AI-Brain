@@ -12,6 +12,15 @@ export const MESSAGES = {
   auth: "We couldn’t authenticate your account.",
   provider: "We couldn’t connect to this AI source.",
   too_large: "That import is too large to send at once.",
+  invalid_url: "That doesn’t look like a web address. Paste a full link starting with https://",
+  blocked_url: "That address can’t be read. Only public web pages work.",
+  unreachable: "We couldn’t reach that page. Check the link, or paste the article text instead.",
+  not_found: "That page doesn’t exist any more (404). Check the link.",
+  forbidden_page: "That site doesn’t let readers like ours in (it may need a login or block bots). Paste the article text instead.",
+  not_html: "That link isn’t a web page (it may be a PDF, image or download). Paste the text instead.",
+  timeout: "That page took too long to load. Try again, or paste the article text instead.",
+  no_text: "We couldn’t find readable writing on that page. It may load its text with JavaScript. Paste the article text instead.",
+  learn_rate_limited: "That’s a lot of links in a minute. Wait a moment, then try again.",
 };
 
 export function send(res, status, body) {

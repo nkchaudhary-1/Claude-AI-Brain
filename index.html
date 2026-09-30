@@ -37,6 +37,7 @@
       <div class="results" id="results" role="listbox" hidden></div>
     </div>
     <button class="ibtn" id="btnTime" aria-label="Time" title="Time"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+    <button class="vbtn learn-btn" id="btnLearn" aria-label="Add a link" title="Add a link: learn from any article"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="lbl">Add a link</span></button>
     <button class="ibtn" id="btnHelp" aria-label="How to read this map" title="How to read this map" aria-expanded="false" aria-controls="help"><span class="q" aria-hidden="true">?</span></button>
     <button class="ibtn" id="btnInsights" aria-pressed="false" aria-label="Insights" title="Insights"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.5 4 4 1.5-4 1.5L8 12.5 6.5 8.5l-4-1.5 4-1.5L8 1.5z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg></button>
     <button class="ibtn" id="btnImport" aria-label="Import Claude data" title="Import Claude data"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -75,6 +76,26 @@
 </aside>
 
 <div class="drawer" id="drawer" hidden aria-label="Insights"></div>
+
+<div class="scrim" id="learnScrim" hidden>
+  <div class="sheet learn" role="dialog" aria-modal="true" aria-labelledby="learnTitle">
+    <button class="ibtn x" id="learnClose" aria-label="Close"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+    <h2 class="mono" id="learnTitle">Learn from a link</h2>
+    <p class="lead">Paste any article. Its key ideas become nodes, connected to what your brain already knows.</p>
+    <form id="learnForm" class="learn-form"><input id="learnUrl" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…" aria-label="Article link"><button class="cta" type="submit">Map it</button></form>
+    <p class="fine" id="learnLocal" hidden>Reading links needs the hosted app. Here, paste the article’s text instead.</p>
+    <details id="learnPaste"><summary>Paywalled, or no link? Paste the text</summary>
+      <textarea id="learnText" placeholder="Paste the article text: a few paragraphs or more" aria-label="Article text"></textarea>
+      <button class="lbtn" id="learnTextGo" type="button">Map this text</button>
+    </details>
+    <div class="msg" id="learnMsg" role="status" aria-live="polite"></div>
+    <ol class="how">
+      <li><b>We read the page</b><span>Only the article text. Menus, ads and comments are skipped.</span></li>
+      <li><b>Pick its key ideas</b><span>The sentences that carry the article’s own vocabulary, one per section. Quoted exactly, never rewritten.</span></li>
+      <li><b>Connect them</b><span>Each idea links to nodes about the same thing, and says why.</span></li>
+    </ol>
+  </div>
+</div>
 <div class="drawer help" id="help" hidden role="dialog" aria-labelledby="helpTitle"></div>
 
 <div class="scrim" id="importScrim" hidden>
@@ -129,9 +150,10 @@
 
 <section class="stage landing" id="landing" hidden aria-labelledby="landingTitle">
   <p class="mono eyebrow">My AI Brain</p>
-  <h1 id="landingTitle">A visual map of everything you discover with AI.</h1>
-  <div class="row"><button class="cta" id="landingBuild">Build My AI Brain</button><button class="ghost" id="landingDemo">Explore the demo</button></div>
-  <p class="fine">Private to your account. Only what you choose to bring in.</p>
+  <h1 id="landingTitle">Paste anything you read. Watch it connect to what you know.</h1>
+  <form class="landing-learn" id="landingLearn"><input id="landingUrl" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="Paste an article link" aria-label="Article link"><button class="cta" type="submit">Map it</button></form>
+  <div class="row"><button class="ghost" id="landingBuild">Build My AI Brain</button><button class="ghost" id="landingDemo">Explore the demo</button></div>
+  <p class="fine">Free. Every key idea is quoted from the page, never rewritten by AI. Your brain is private to your account.</p>
 </section>
 
 <section class="stage card" id="auth" hidden role="dialog" aria-modal="true" aria-labelledby="authTitle">

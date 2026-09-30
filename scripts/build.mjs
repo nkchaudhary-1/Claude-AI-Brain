@@ -13,11 +13,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (p) => readFile(root + p, "utf8");
-const [page, css, seedSrc, importer, cloud, main] = await Promise.all([
-  read("index.html"), read("src/styles.css"), read("src/data/seed.js"), read("src/importer/core.js"), read("src/cloud.js"), read("src/main.js"),
+const [page, css, seedSrc, importer, learn, cloud, main] = await Promise.all([
+  read("index.html"), read("src/styles.css"), read("src/data/seed.js"), read("src/importer/core.js"), read("src/learn/core.js"), read("src/cloud.js"), read("src/main.js"),
 ]);
 const strip = (s) => s.replace(/^export\s+/gm, "");
-const app = [strip(importer), strip(cloud), main.replace(/^import .*?;[ \t]*$/gm, "")].join("\n");
+const app = [strip(importer), strip(learn), strip(cloud), main.replace(/^import .*?;[ \t]*$/gm, "")].join("\n");
 
 // ── demo brain ─────────────────────────────────────────────────────────────
 // The hosted app is public, and anyone can read its source, so it carries none of the personal seed:
