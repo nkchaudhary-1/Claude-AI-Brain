@@ -133,8 +133,9 @@ const ARTICLE = "https://fieldnotes.example/onboarding";
 const DIGEST = Learn.digest(Learn.extractHtml(readFileSync(new URL("./fixtures/article.html", import.meta.url), "utf8"), ARTICLE));
 const withLearn = (base) => (path, req) => (path === "/api/learn" ? (JSON.parse(req.postData() || "{}").url === ARTICLE ? { body: DIGEST } : { status: 422, body: { error: { code: "no_text", message: "We couldn’t find readable writing on that page." } } }) : base ? base(path, req) : null);
 await scenario("learn", { width: 1440, height: 900 }, [
-  async (p) => { await p.click("#btnLearn"); await visible(p, "#learnScrim"); await p.fill("#learnUrl", "fieldnotes.example/nothing-here"); await p.click("#learnForm .cta"); await p.waitForTimeout(600);
-    if (!/couldn’t find readable writing/.test(await p.textContent("#learnMsg"))) throw new Error("error message: " + (await p.textContent("#learnMsg"))); await p.fill("#learnUrl", ARTICLE); await p.click("#learnForm .cta"); },
+  async (p) => { await p.click("#btnLearn"); await visible(p, "#learnScrim"); await p.fill("#learnIn", "hello"); await p.click("#learnForm .cta"); if (!/full article link/.test(await p.textContent("#learnMsg"))) throw new Error("bad input message");
+    await p.fill("#learnIn", "fieldnotes.example/nothing-here"); await p.click("#learnForm .cta"); await p.waitForTimeout(600);
+    if (!/couldn’t find readable writing/.test(await p.textContent("#learnMsg"))) throw new Error("error message: " + (await p.textContent("#learnMsg"))); await p.fill("#learnIn", "Worth a read: " + ARTICLE + " (via a friend)"); await p.press("#learnIn", "Enter"); },
   async (p) => { await p.waitForSelector("#panel.open", { timeout: 8000 }); const t = await p.textContent("#pBody");
     if (!/Designing Onboarding That Sticks/.test(t) || !/Key ideas · 4/.test(t)) throw new Error("source panel: " + t.slice(0, 200));
     if ((await p.getAttribute("#pBody a.ext", "href")) !== ARTICLE) throw new Error("read-the-original link");
@@ -144,15 +145,19 @@ await scenario("learn", { width: 1440, height: 900 }, [
     if (!href || !href.startsWith(ARTICLE + "#:~:text=")) throw new Error("jump-to-passage link: " + href);
     if (!(await p.isVisible("#pBody .p-quote"))) throw new Error("quote");
     const why = await p.$$eval("#pBody .orbs.rel .rw", (els) => els.map((e) => e.textContent)); console.log("    idea links: " + why.join(" | "));
-    await p.click("#back"); await p.click("#btnLearn"); await p.click("#learnPaste summary");
-    await p.fill("#learnText", "# Retrieval for beginners\n\nRetrieval-augmented generation fetches relevant documents and adds them to the prompt so the model can answer from them. Good chunking matters more than the model you pick.\n\nEmbeddings turn each chunk into a vector, and semantic search finds the closest chunks for a question. Hybrid search adds keyword matching for names and codes.");
-    await p.click("#learnTextGo"); },
+    await p.click("#back"); await p.click("#btnLearn");
+    await p.fill("#learnIn", "# Retrieval for beginners\n\nRetrieval-augmented generation fetches relevant documents and adds them to the prompt so the model can answer from them. Good chunking matters more than the model you pick.\n\nEmbeddings turn each chunk into a vector, and semantic search finds the closest chunks for a question. Hybrid search adds keyword matching for names and codes. Retrieval quality limits answer quality, so evaluate the search step on its own before tuning the prompt.");
+    await p.click("#learnForm .cta"); },
   async (p) => { await p.waitForSelector("#panel.open", { timeout: 8000 }); if (!/Retrieval for beginners/.test(await p.textContent("#pTitle"))) throw new Error("pasted text source"); },
 ], { mock: withLearn(null), wait: 6500, allow: /status of 422/ });
 await scenario("learn-landing", { width: 1440, height: 900 }, [
   async (p) => { await visible(p, "#landingLearn"); await p.fill("#landingUrl", ARTICLE); await p.press("#landingUrl", "Enter"); },
   async (p) => { await p.waitForSelector("#panel.open", { timeout: 8000 }); if (!/Designing Onboarding That Sticks/.test(await p.textContent("#pTitle"))) throw new Error("landing → source panel"); },
 ], { mock: withLearn(api(null, null)), wait: 7000 });
+await scenario("learn-link", { width: 1440, height: 900 }, [
+  async (p) => { await p.waitForSelector("#panel.open", { timeout: 8000 }); if (!/Designing Onboarding That Sticks/.test(await p.textContent("#pTitle"))) throw new Error("?learn= didn't map the article");
+    if (/learn=/.test(await p.evaluate(() => location.search))) throw new Error("?learn= left in the address"); },
+], { mock: withLearn(null), wait: 7000, hash: "?learn=" + encodeURIComponent(ARTICLE) });
 await scenario("app-landing", { width: 1440, height: 900 }, [
   async (p) => { await visible(p, "#landing"); await p.click("#landingBuild"); await visible(p, "#auth"); },
   async (p) => { await p.click("#authEmailBtn"); await p.fill("#authEmailIn", "ada@example.com"); await p.press("#authEmailIn", "Enter"); await p.waitForTimeout(400);

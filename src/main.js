@@ -979,26 +979,45 @@ async function readFiles(list,ui=IMPORT_UI){
   }catch(err){ui.msg.className="msg err";ui.msg.textContent=err instanceof SyntaxError?"That file isn’t valid JSON. Check it opens in a JSON viewer, then try again.":err instanceof DOMException?"The file couldn’t be read. Try choosing it again.":err.message}}
 /* LEARN — paste a link (or text); its key ideas become nodes linked into the brain.
    Free: no AI, nothing rewritten. Every idea is a sentence quoted from the page (src/learn/core.js). */
-const learnScrim=document.getElementById("learnScrim"),learnMsg=document.getElementById("learnMsg"),learnUrl=document.getElementById("learnUrl"),learnText=document.getElementById("learnText");
+const learnScrim=document.getElementById("learnScrim"),learnMsg=document.getElementById("learnMsg"),learnIn=document.getElementById("learnIn");
 const LEARN_UI={msg:learnMsg,close:()=>closeLearn()};
+// The hosted app reads links. The claude.ai preview can't reach the web, so it hands links over to the app.
+const APP_URL=((document.querySelector('meta[name="brain-app"]')||{}).content||"").replace(/\/$/,"");
 let learnBusy=false;
-function openLearn(url){closeHelp();if(tourK>=0)endTour();learnScrim.hidden=false;learnMsg.textContent="";learnMsg.className="msg";if(url)learnUrl.value=url;
-  const canFetch=MODE==="app";document.getElementById("learnForm").hidden=!canFetch;document.getElementById("learnLocal").hidden=canFetch;document.getElementById("learnPaste").open=!canFetch;
-  setTimeout(()=>(canFetch?learnUrl:learnText).focus(),60)}
+function openLearn(prefill){closeHelp();if(tourK>=0)endTour();learnScrim.hidden=false;learnMsg.textContent="";learnMsg.className="msg";
+  if(prefill!=null){learnIn.value=prefill;growLearn()}
+  const hosted=MODE==="app";document.getElementById("learnGrab").hidden=!hosted||COARSE;
+  if(hosted)document.getElementById("bookmarklet").href=`javascript:(()=>{window.open(${JSON.stringify(location.origin+"/?learn=")}+encodeURIComponent(location.href),"_blank")})()`;
+  setTimeout(()=>learnIn.focus(),60)}
 function closeLearn(){learnScrim.hidden=true}
+function growLearn(){learnIn.style.height="auto";learnIn.style.height=Math.min(learnIn.scrollHeight,150)+"px"}
+// One box for everything: a link (even with words around it) is read; a long paste is treated as the article itself.
+function learnInput(v){v=String(v||"").trim();if(!v)return{};const words=v.split(/\s+/);
+  if(words.length===1&&/^(https?:\/\/)?[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/i.test(v))return{url:/^https?:/i.test(v)?v:"https://"+v};
+  const m=v.match(/https?:\/\/[^\s<>"]+/);if(m&&words.length<40)return{url:m[0].replace(/[).,;]+$/,"")};
+  if(words.length>=60)return{text:v};
+  return{err:"Paste a full article link (https://…), or the article’s whole text."}}
+function submitLearn(v,ui=LEARN_UI){const r=learnInput(v);
+  if(r.url){if(MODE==="app")return learnFromUrl(r.url,ui);return handOff(r.url,ui)}
+  if(r.text)return learnFromText(r.text,ui);
+  if(r.err){ui.msg.className="msg err";ui.msg.textContent=r.err}}
+function handOff(url,ui){ui.msg.className="msg";ui.msg.replaceChildren("Links are read by the hosted app; this private preview can’t reach other websites.");
+  if(!APP_URL)return;const a=document.createElement("a");a.className="lbtn ext";a.target="_blank";a.rel="noopener noreferrer";a.href=APP_URL+"/?learn="+encodeURIComponent(url);a.textContent="Open it in My AI Brain ↗";
+  const row=document.createElement("span");row.className="links";row.append(a);ui.msg.append(row)}
 // the reader's answer is untrusted: keep only strings of sane length
 function cleanDigest(j){const S=(v,n)=>typeof v==="string"?v.slice(0,n):"",A=(v,n)=>Array.isArray(v)?v.filter(x=>typeof x==="string").map(x=>x.slice(0,60)).slice(0,n):[];
   const p=j&&j.page||{};const ideas=(Array.isArray(j&&j.ideas)?j.ideas:[]).slice(0,8).map(x=>({title:S(x&&x.title,90),quote:S(x&&x.quote,600),section:S(x&&x.section,140)||null,keywords:A(x&&x.keywords,5)})).filter(x=>x.title&&x.quote);
   return {page:{url:S(p.url,2000),title:S(p.title,200)||"Untitled page",site:S(p.site,100),description:S(p.description,400),published:S(p.published,10)||null},summary:S(j.summary,400),ideas,keywords:A(j.keywords,10),
     domains:A(j.domains,2).filter(d=>DOMAINS[d]),readMinutes:Math.max(1,Math.min(600,Math.round(+j.readMinutes||1)))}}
 async function learnFromUrl(raw,ui=LEARN_UI){let url=String(raw||"").trim();if(!url||learnBusy)return;if(!/^https?:\/\//i.test(url))url="https://"+url;
+  if(MODE!=="app")return handOff(url,ui);
   learnBusy=true;ui.msg.className="msg";ui.msg.textContent="Reading the page…";
   try{const r=await fetch("/api/learn",{method:"POST",headers:{"content-type":"application/json","x-brain-request":"1"},body:JSON.stringify({url})});
     const j=await r.json().catch(()=>null);
     if(!r.ok||!j||!Array.isArray(j.ideas)){ui.msg.className="msg err";ui.msg.textContent=(j&&j.error&&j.error.message)||"We couldn’t read that page. Paste the article text instead.";return}
     const dg=cleanDigest(j);if(!dg.ideas.length){ui.msg.className="msg err";ui.msg.textContent="We couldn’t find key ideas on that page. Paste the article text instead.";return}
     await addLearned(dg,ui)}
-  catch(e){ui.msg.className="msg err";ui.msg.textContent="We couldn’t reach the link reader. Check your connection, or paste the text instead."}
+  catch(e){console.error("[learn]",e);ui.msg.className="msg err";ui.msg.textContent="We couldn’t reach the link reader. Check your connection, or paste the text instead."}
   finally{learnBusy=false}}
 async function learnFromText(text,ui=LEARN_UI){const dg=Learn.digest(Learn.fromText(text));
   if(!dg||!dg.ideas.length){ui.msg.className="msg err";ui.msg.textContent="There isn’t enough writing there to find key ideas. Paste a few full paragraphs.";return}
@@ -1019,8 +1038,14 @@ function focusLearned(id,k=0){const n=G&&G.byId.get(id);
 document.getElementById("btnLearn").addEventListener("click",()=>openLearn());
 document.getElementById("learnClose").addEventListener("click",closeLearn);
 learnScrim.addEventListener("click",e=>{if(e.target===learnScrim)closeLearn()});
-document.getElementById("learnForm").addEventListener("submit",e=>{e.preventDefault();learnFromUrl(learnUrl.value)});
-document.getElementById("learnTextGo").addEventListener("click",()=>learnFromText(learnText.value));
+document.getElementById("learnForm").addEventListener("submit",e=>{e.preventDefault();submitLearn(learnIn.value)});
+learnIn.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitLearn(learnIn.value)}});
+learnIn.addEventListener("input",growLearn);
+document.getElementById("bookmarklet").addEventListener("click",e=>e.preventDefault());
+// ?learn=<url> (the bookmark button, shared links): map it as soon as a brain is on screen
+let pendingLearn=(()=>{try{const q=new URLSearchParams(location.search),v=q.get("learn");if(!v)return null;q.delete("learn");
+  history.replaceState(null,"",location.pathname+(q.toString()?"?"+q:"")+location.hash);return v.slice(0,2000)}catch(e){return null}})();
+function runPendingLearn(){if(!pendingLearn)return false;const v=pendingLearn;pendingLearn=null;tourSeen=true;setTimeout(()=>{openLearn(v);submitLearn(v)},500);return true}
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!learnScrim.hidden)closeLearn()});
 // The export email's manifest lists one-time links; the chats are in the "conversations" zips.
 function showManifest(files,ui){
@@ -1129,6 +1154,7 @@ async function openBrain(how="regrow"){
   adoptPayload(payload);step("relationships");await tick(280);
   step("nodes");setBanner(null);load(Cloud.toVisual(payload),how);await tick(420);
   step("ready");await tick(520);stage(null);renderAccountBtn();
+  if(runPendingLearn())return;
   if(!APP.base.length)showWelcome();
 }
 function adoptPayload(p){APP.brain=p.brain;APP.profile=p.profile;APP.base=Cloud.toVisual(p).neurons;APP.sources=p.sources||[];APP.history=p.history||[]}
@@ -1139,6 +1165,7 @@ function enterGuest(reason,how="regrow"){
   if(local)localBanner();else setBanner(null);
   if(reason==="expired")openAuth("Your session has ended. Sign in again to open your Brain.",true);
   else if(reason==="auth-error")openAuth("We couldn’t authenticate your account. Try again.",true);
+  else if(pendingLearn){stage(null);runPendingLearn()}
   else stage("landing");
 }
 function bootLocal(how){
@@ -1146,6 +1173,7 @@ function bootLocal(how){
   let data=SEED;const saved=localBrain();if(saved)data=saved;
   if(location.hash==="#empty")data={neurons:[]};else if(location.hash==="#stress")data=synthetic(3000);
   load(data,how);
+  runPendingLearn();
   if(location.hash==="#stress")setBanner(`Synthetic performance test · ${G.neurons.length.toLocaleString("en-IN")} neurons, ${G.edges.length.toLocaleString("en-IN")} connections`,"Back to my brain",()=>{load(saved||SEED);setBanner(null)});
   else if(saved&&location.hash!=="#empty")localBanner();
 }
@@ -1153,7 +1181,7 @@ function bootLocal(how){
 /* landing + auth */
 $("landingBuild").addEventListener("click",()=>openAuth());
 $("landingDemo").addEventListener("click",()=>{stage(null);if(!localBrain())setBanner("Demo brain · explore freely","Build my own",()=>openAuth())});
-$("landingLearn").addEventListener("submit",e=>{e.preventDefault();const u=$("landingUrl").value.trim();if(!u)return;stage(null);openLearn(u);learnFromUrl(u)});
+$("landingLearn").addEventListener("submit",e=>{e.preventDefault();const v=$("landingUrl").value.trim();if(!v)return;stage(null);openLearn(v);submitLearn(v)});
 let authFromLanding=false;
 function openAuth(message,isError){authFromLanding=!$("landing").hidden;$("authEmail").hidden=true;$("authEmailBtn").hidden=false;
   const m=$("authMsg");m.className=isError?"msg err":"msg";m.textContent=message||"";stage("auth")}

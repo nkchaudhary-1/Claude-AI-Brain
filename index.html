@@ -82,13 +82,10 @@
     <button class="ibtn x" id="learnClose" aria-label="Close"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
     <h2 class="mono" id="learnTitle">Learn from a link</h2>
     <p class="lead">Paste any article. Its key ideas become nodes, connected to what your brain already knows.</p>
-    <form id="learnForm" class="learn-form"><input id="learnUrl" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…" aria-label="Article link"><button class="cta" type="submit">Map it</button></form>
-    <p class="fine" id="learnLocal" hidden>Reading links needs the hosted app. Here, paste the article’s text instead.</p>
-    <details id="learnPaste"><summary>Paywalled, or no link? Paste the text</summary>
-      <textarea id="learnText" placeholder="Paste the article text: a few paragraphs or more" aria-label="Article text"></textarea>
-      <button class="lbtn" id="learnTextGo" type="button">Map this text</button>
-    </details>
+    <form id="learnForm" class="learn-form"><textarea id="learnIn" rows="1" autocomplete="off" spellcheck="false" placeholder="Paste an article link" aria-label="Article link, or the article’s text"></textarea><button class="cta" type="submit">Map it</button></form>
+    <p class="fine" id="learnHint">Blogs, docs, news and Medium work best. No link? Paste the article’s text in the same box.</p>
     <div class="msg" id="learnMsg" role="status" aria-live="polite"></div>
+    <div class="grab" id="learnGrab" hidden><b>Skip the copy-paste</b><span>Drag this button to your bookmarks bar. On any article, click it and the article joins your brain.</span><a class="bookmarklet" id="bookmarklet" href="#" title="Drag me to your bookmarks bar">＋ My AI Brain</a></div>
     <ol class="how">
       <li><b>We read the page</b><span>Only the article text. Menus, ads and comments are skipped.</span></li>
       <li><b>Pick its key ideas</b><span>The sentences that carry the article’s own vocabulary, one per section. Quoted exactly, never rewritten.</span></li>

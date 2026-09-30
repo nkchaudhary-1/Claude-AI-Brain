@@ -51,7 +51,9 @@ await writeFile(root + `dist/assets/${cssName}`, css);
 await writeFile(root + "dist/index.html", `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n${head}\n<link rel="stylesheet" href="/assets/${cssName}">\n<script src="/assets/${jsName}" defer></script>\n</head>\n${bodyTag}\n${webBody}\n</body>\n</html>\n`);
 await writeFile(root + "dist/robots.txt", "User-agent: *\nAllow: /$\nDisallow: /api/\n");
 
-const artifactHead = head.replace('<meta name="brain-mode" content="app">', '<meta name="brain-mode" content="local">');
+// The preview can't read links; it hands them to the hosted app at BRAIN_APP_URL (e.g. https://my-ai-brain.vercel.app).
+const appUrl = (process.env.BRAIN_APP_URL || "").replace(/[^\w:/.\-]/g, "");
+const artifactHead = head.replace('<meta name="brain-mode" content="app">', `<meta name="brain-mode" content="local">${appUrl ? `\n<meta name="brain-app" content="${appUrl}">` : ""}`);
 const fragment = `${artifactHead}\n<style>\n${css}</style>\n${body}\n<script>\n${strip(seedSrc)}\n${app}</script>\n`;
 await mkdir(root + "dist-artifact", { recursive: true });
 await writeFile(root + "dist-artifact/artifact.html", fragment);
