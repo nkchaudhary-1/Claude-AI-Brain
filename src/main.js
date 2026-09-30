@@ -655,7 +655,12 @@ function select(i,how){
   else renderPanel(true);
   hideHint();
 }
-function panelOrigin(i){const r=panel.getBoundingClientRect();panel.style.setProperty("--ox",`${Math.round((screen[i*4]||r.left)-r.left)}px`);panel.style.setProperty("--oy",`${Math.round((screen[i*4+1]||r.top)-r.top)}px`)}
+// the reveal circle starts at the neuron; its open radius must reach the panel's farthest corner, or a neuron far
+// from the panel leaves that corner clipped (a fixed % radius did, on tall screens)
+function panelOrigin(i){const r=panel.getBoundingClientRect(),x=Math.round((screen[i*4]||r.left)-r.left),y=Math.round((screen[i*4+1]||r.top)-r.top);
+  panel.style.setProperty("--ox",`${x}px`);panel.style.setProperty("--oy",`${y}px`);panelReach(x,y)}
+function panelReach(x=parseFloat(panel.style.getPropertyValue("--ox"))||0,y=parseFloat(panel.style.getPropertyValue("--oy"))||0){
+  const w=panel.offsetWidth,h=panel.offsetHeight;panel.style.setProperty("--or",`${Math.ceil(Math.hypot(Math.max(Math.abs(x),Math.abs(w-x)),Math.max(Math.abs(y),Math.abs(h-y))))+8}px`)}
 function openPanel(i){if(S.sel!==i)return;renderPanel(true);panelOrigin(i);panel.classList.add("open");panel.setAttribute("aria-hidden","false");
   setTimeout(()=>document.getElementById("pClose").focus({preventScroll:true}),80)}
 // Closing: the panel folds back into its neuron as particles, and the network reconnects.
@@ -1108,7 +1113,7 @@ function load(data,how="regrow"){
   else{introFrom=empty?.12:Math.min(introAt(now),.5);introStart=now;introRate=1/3400;introCam=false;goHome(1.2)}
   if(empty){uiShown=true;introCam=false;goHome(how==="boot"?0:1.2);document.body.classList.remove("intro")}
 }
-let rz=0;addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(()=>{if(G){measureSafe();if(S.sel<0&&!S.focus&&S.region==="all"&&!introCam)goHome(.6)}},150)});
+let rz=0;addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(()=>{if(panel.classList.contains("open"))panelReach();if(G){measureSafe();if(S.sel<0&&!S.focus&&S.region==="all"&&!introCam)goHome(.6)}},150)});
 
 /* =========================================================================
    APP — accounts, loading, landing, welcome, connected AI and the account sheet.

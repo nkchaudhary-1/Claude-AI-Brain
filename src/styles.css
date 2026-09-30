@@ -170,7 +170,7 @@ body.detail .back{opacity:1;pointer-events:auto}
 /* knowledge panel: grows out of the selected neuron, folds back into it */
 .panel{position:fixed;top:calc(env(safe-area-inset-top,0px) + 16px);right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);width:min(400px,calc(100vw - 32px));z-index:8;background:var(--glass-2);border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(26px);-webkit-backdrop-filter:blur(26px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 40px 90px rgba(0,0,0,.6),inset 0 1px 0 rgba(200,230,255,.05);
   clip-path:circle(0px at var(--ox,100%) var(--oy,50%));opacity:0;visibility:hidden;transition:clip-path .42s cubic-bezier(.7,0,.84,0),opacity .3s .12s,visibility 0s .45s}
-.panel.open{clip-path:circle(170% at var(--ox,100%) var(--oy,50%));opacity:1;visibility:visible;transition:clip-path .9s var(--out),opacity .35s,visibility 0s}
+.panel.open{clip-path:circle(var(--or,300vmax) at var(--ox,100%) var(--oy,50%));opacity:1;visibility:visible;transition:clip-path .9s var(--out),opacity .35s,visibility 0s}
 .p-scroll{overflow:auto;padding:24px 24px 32px;display:grid;gap:18px;align-content:start;grid-auto-rows:max-content} /* rows never squash (the tab row scrolls sideways, so it could collapse to 1px) */
 .p-close{position:absolute;top:14px;right:14px;width:30px;height:30px;z-index:1}
 .anim .rv{animation:rv .75s var(--out) both;animation-delay:calc(.28s + var(--i,0)*.055s)}
