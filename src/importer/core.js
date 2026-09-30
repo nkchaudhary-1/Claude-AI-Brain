@@ -388,7 +388,7 @@ export const Importer = (() => {
     }
     incoming.forEach(raw => {
       const m = byId.get(idMap.get(raw.id)); if (!m) return;
-      (raw.connections || []).forEach(cid => { const t = idMap.get(cid) || (byId.has(cid) ? cid : null); if (t && t !== m.id && !m.connections.includes(t)) m.connections.push(t); });
+      (raw.connections || []).map(c => (c && typeof c === "object" ? c.id : c)).forEach(cid => { const t = idMap.get(cid) || (byId.has(cid) ? cid : null); if (t && t !== m.id && !m.connections.includes(t)) m.connections.push(t); });
     });
     return { neurons: out, stats: { added, updated } };
   }

@@ -35,6 +35,9 @@ function mapType(s){s=String(s||"").toLowerCase();if(/found|knowledge|base/.test
   if(/experiment|test|try/.test(s))return"experiment";if(/research|reference|study/.test(s))return"research";if(/idea|concept|future/.test(s))return"idea";return"project"}
 const parseDate=s=>{if(!s)return null;const t=Date.parse(s);return isNaN(t)?null:t};
 const arr=v=>Array.isArray(v)?v.filter(x=>x!=null&&x!=="").map(String):[];
+// a link is an id, or {id, why} when the reason is known (the demo brain writes them)
+const linkIds=v=>(Array.isArray(v)?v:[]).map(c=>c&&typeof c==="object"?c.id:c).filter(x=>x!=null&&x!=="").map(String);
+const linkWhys=v=>Object.fromEntries((Array.isArray(v)?v:[]).filter(c=>c&&typeof c==="object"&&c.id!=null&&c.why).map(c=>[String(c.id),String(c.why)]));
 function regionOf(n){if(n.type==="research")return"research";if(n.type==="idea")return"ideas";const d=n.domains.find(d=>d!=="career");return d||"design"}
 function hashId(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
 
@@ -56,11 +59,12 @@ function normalize(raw){
       status:STATUS_LABEL[r.status]?r.status:(type==="idea"?"idea":String(r.status||"exploring").toLowerCase().replace(/\s+/g,"-")),
       visibility:r.visibility==="private"?"private":"public",weight:Math.max(1,Math.min(5,+r.weight||2)),
       description:String(r.description||""),learned:arr(r.learned),created:arr(r.created),insights:arr(r.insights),skills:arr(r.skills),
-      conversations:convs,createdAt,updatedAt,_conn:arr(r.connections),synthetic:!!r.synthetic,source:r.source==="import"?"import":undefined};
+      conversations:convs,createdAt,updatedAt,_conn:linkIds(r.connections),_why:linkWhys(r.connections),synthetic:!!r.synthetic,source:r.source==="import"?"import":undefined};
     n.region=regionOf(n);n.idx=neurons.length;neurons.push(n);byId.set(id,n);
   });
-  const adj=neurons.map(()=>new Set()),edges=[],eIdx=new Map();
+  const adj=neurons.map(()=>new Set()),edges=[],eIdx=new Map(),why=new Map();
   neurons.forEach(n=>n._conn.forEach(cid=>{const m=byId.get(cid);if(!m||m===n)return;const a=Math.min(n.idx,m.idx),b=Math.max(n.idx,m.idx),k=a*1e6+b;
+    const w=n._why[cid];if(w&&!why.has(k))why.set(k,w);
     if(eIdx.has(k))return;eIdx.set(k,edges.length);edges.push([a,b]);adj[a].add(b);adj[b].add(a)}));
   const dens=neurons.length>250?Math.max(.5,Math.sqrt(250/neurons.length)):1;
   neurons.forEach(n=>{n.degree=adj[n.idx].size;const age=n.updatedAt?(NOW-n.updatedAt)/DAY:400;
@@ -70,7 +74,7 @@ function normalize(raw){
     n.imp=Math.min(1,n.weight/5*.7+Math.min(1,Math.sqrt(n.degree)/3.5)*.3);
     const h=hashId(n.id);n.seed=h;n.s01=(h%10007)/10007;n.ph=(h%6283)/1000;
     n.size=(6+n.weight*2.6+Math.sqrt(n.degree)*1.5)*(dens<1?.55+.45*dens:1);n.pos=[0,0,0]});
-  return {neurons,byId,edges,adj,eIdx,density:dens};
+  return {neurons,byId,edges,adj,eIdx,why,density:dens};
 }
 const edgeOf=(a,b)=>{const k=Math.min(a,b)*1e6+Math.max(a,b);return G.eIdx.has(k)?G.eIdx.get(k):-1};
 function exportData(G){return{version:2,neurons:G.neurons.map(n=>({id:n.id,title:n.title,category:n.domains.map(d=>DOMAINS[d].label).join(" / "),domains:n.domains,type:n.type,status:n.status,visibility:n.visibility,weight:n.weight,
@@ -378,6 +382,7 @@ function frame(now){
     if(intro>=introCap){introCam=false}}
   if(!uiShown&&intro>=Math.min(introCap,.97)){uiShown=true;document.body.classList.remove("intro");measureSafe()}
   updateIntroCaption(intro);
+  tourTick(now);
   const idle=!REDUCED&&S.sel<0&&!tween&&!introCam&&now-lastInteract>5000&&!pointers.size;
   sway+=((idle?1:0)-sway)*Math.min(1,dt*.5);
   par.x+=(par.tx-par.x)*Math.min(1,dt*2.2);par.y+=(par.ty-par.y)*Math.min(1,dt*2.2);
@@ -623,7 +628,7 @@ canvas.addEventListener("pointerleave",()=>{if(!pointers.size)setHover(-1)});
 canvas.addEventListener("wheel",e=>{e.preventDefault();skipIntro();introCam=false;cam.r=clampR(cam.r*Math.exp(e.deltaY*.0012));if(tween&&tween.to.r!=null)tween=null;lastInteract=performance.now();hideHint()},{passive:false});
 function setHover(i,x,y){
   if(i!==S.hover){S.hover=i;canvas.classList.toggle("pointing",i>=0);
-    if(i>=0){const n=G.neurons[i];tip.innerHTML=`<div class="eyebrow mono"><span class="dot" style="--c:${REGIONS[n.region].color}"></span>${REGIONS[n.region].label} · ${TYPE_LABEL[n.type]}</div><h3>${esc(n.title)}</h3><p>${esc(short(n.description,120))}</p><div class="foot mono">${STATUS_LABEL[n.status]||n.status} · ${n.degree} ${n.degree===1?"link":"links"}</div>`;tip.classList.add("on")}
+    if(i>=0){const n=G.neurons[i];tip.innerHTML=`<div class="eyebrow mono"><span class="dot" style="--c:${REGIONS[n.region].color}"></span>${REGIONS[n.region].label} · ${TYPE_LABEL[n.type]}</div><h3>${esc(n.title)}</h3><p>${esc(short(n.description,120))}</p>${n.degree?`<p class="lk">Linked to ${[...G.adj[n.idx]].map(j=>G.neurons[j]).sort((x,y)=>y.size-x.size).slice(0,3).map(m=>`<b>${esc(m.title)}</b>`).join(", ")}${n.degree>3?` +${n.degree-3}`:""}</p>`:""}<div class="foot mono">${STATUS_LABEL[n.status]||n.status} · ${COARSE?"Tap":"Click"} to see why</div>`;tip.classList.add("on")}
     else tip.classList.remove("on")}
   if(i>=0&&x!=null){const tx=Math.min(x+22,W-276),ty=Math.min(y+22,H-tip.offsetHeight-12);tip.style.transform=`translate(${tx}px,${ty}px)`}
 }
@@ -677,7 +682,7 @@ function renderPanel(anim){
     body=`${ins.length?`<section class="sec ins rv" style="--i:5"><h4 class="mono">Key insights</h4>${list(ins.slice(0,5))}</section>`:""}
     ${!ins.length&&!n.learned.length&&!n.created.length?`<div class="rv" style="--i:5">${none("Insights for this neuron haven’t been recorded yet. They fill in as more conversations are imported.")}</div>`:""}
     <dl class="times rv" style="--i:6"><div><dt class="mono">Started</dt><dd>${fmtMonth(n.createdAt)}</dd></div><div><dt class="mono">Last explored</dt><dd>${fmtMonth(n.updatedAt)}</dd></div><div><dt class="mono">Links</dt><dd>${String(n.degree).padStart(2,"0")}</dd></div></dl>
-    ${rel.length?`<section class="sec rv" style="--i:7"><h4 class="mono">Related knowledge</h4><div class="orbs">${rel.map(m=>`<button data-rel="${m.idx}" style="--c:${REGIONS[m.region].color}"><span class="o"></span>${esc(m.title)}</button>`).join("")}</div></section>`:""}`}
+    ${rel.length?`<section class="sec rv" style="--i:7"><h4 class="mono">Connected to · ${rel.length}</h4><p class="why-note">Each line in the map joins related knowledge. Here’s why these are linked.</p><div class="orbs rel">${rel.map(m=>`<button data-rel="${m.idx}" style="--c:${REGIONS[m.region].color}"><span class="o"></span><span class="rt">${esc(m.title)}</span><span class="rw">${esc(linkWhy(n,m))}</span></button>`).join("")}</div></section>`:""}`}
   else if(tab==="learnings")body=`<div class="rv" style="--i:5">${n.learned.length?`<section class="sec">${list(n.learned)}</section>`:none("No learnings recorded for this neuron yet.")}</div>`;
   else if(tab==="creations")body=`<div class="rv" style="--i:5">${n.created.length?`<section class="sec">${list(n.created)}</section>`:none("Nothing recorded as created from this neuron yet.")}${n.skills.length?`<section class="sec"><h4 class="mono">Skills involved</h4><div class="skills">${n.skills.map(s=>`<span>${esc(s)}</span>`).join("")}</div></section>`:""}</div>`;
   else body=convs.length?`<div class="convs rv" style="--i:5">${convs.map(c=>`<div class="conv"><span class="cd mono">${c.date?fmtDate(parseDate(c.date),c.approx):"Date not recorded"}</span><span class="ct">${esc(c.title)}</span>${c.summary?`<span class="cs">${esc(c.summary)}</span>`:""}</div>`).join("")}</div>`:none("No conversations are linked to this neuron yet. They appear once your Claude history is imported.");
@@ -703,6 +708,80 @@ pBody.addEventListener("pointerleave",()=>{S.hover=-1});
 function frameSet(set){const ps=[...set].map(tpos);if(!ps.length)return;const c=[0,0,0];ps.forEach(p=>{c[0]+=p[0];c[1]+=p[1];c[2]+=p[2]});c.forEach((v,i)=>c[i]=v/ps.length);
   const spread=Math.max(...ps.map(p=>Math.hypot(p[0]-c[0],p[1]-c[1],p[2]-c[2])),1);flyTo({t:c,r:Math.max(14,Math.min(home().r,spread*2.4+10)),sx:0,sy:0},1.4)}
 function clearFocus(){S.focus=null;S.insight=-1}
+
+/* why two nodes are linked: computed from what they share, never guessed */
+const STOPW=new Set("code writing language model models people product build built project user users test tests thing things time good better small simple real right data design about after also and any are around because been before being between both but can could does doing done each even every from have having here how into its just like made make many more most much must need never only other over same should since some such than that their them then there these they this those through under until very want was were what when where which while with within without would your you the for not our out use used using way ways work works first last".split(" "));
+let WDF=null;
+function nodeWords(n){if(!n._w){const w=new Set();(n.title+" "+n.description+" "+n.skills.join(" ")).toLowerCase().split(/[^\p{L}\p{N}]+/u)
+  .forEach(x=>{if(x.length>=4&&!STOPW.has(x)&&!/^\d+$/.test(x))w.add(x.length>5&&x.endsWith("s")&&!x.endsWith("ss")?x.slice(0,-1):x)});n._w=w}return n._w}
+function linkWhy(a,b){
+  const lo=Math.min(a.idx,b.idx),hi=Math.max(a.idx,b.idx),own=G.why&&G.why.get(lo*1e6+hi);if(own)return own;
+  const ids=new Set(a.conversations.map(c=>c.id||c.title)),sc=b.conversations.find(c=>ids.has(c.id||c.title));
+  if(sc)return"Same conversation · "+sc.title;
+  const sk=a.skills.filter(x=>b.skills.some(y=>y.toLowerCase()===x.toLowerCase()));
+  if(sk.length)return(sk.length>1?"Shared skills · ":"Shared skill · ")+sk.slice(0,2).join(", ");
+  if(!WDF||WDF.g!==G){WDF=new Map();WDF.g=G;G.neurons.forEach(n=>nodeWords(n).forEach(w=>WDF.set(w,(WDF.get(w)||0)+1)))}
+  const wa=nodeWords(a),lim=Math.max(2,Math.min(4,G.neurons.length*.08)),sw=[...nodeWords(b)].filter(w=>wa.has(w)&&w.length>=5&&WDF.get(w)<=lim).sort((x,y)=>WDF.get(x)-WDF.get(y));
+  if(sw.length)return"Both mention · "+sw.slice(0,3).join(", ");
+  const d=a.domains.find(x=>b.domains.includes(x));
+  if(d)return"Both in "+(DOMAINS[d]?DOMAINS[d].label:d);
+  return a.source==="import"||b.source==="import"?"Similar topics in your chats":"Linked by hand";
+}
+
+/* how to read the map: a legend that's always one tap away */
+const COARSE=matchMedia("(pointer:coarse)").matches;
+const helpEl=document.getElementById("help"),btnHelp=document.getElementById("btnHelp");
+function renderHelp(){
+  const dots=RKEYS.map(k=>`<span style="--c:${REGIONS[k].color}"></span>`).join(""),names=RKEYS.map(k=>REGIONS[k].label).join(" · ");
+  helpEl.innerHTML=`<header><h2 class="mono" id="helpTitle">How to read your Brain</h2><button class="ibtn" data-help-close aria-label="Close"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></header>
+  <ul class="legend">
+    <li><i class="lg lg-node"></i><div><b>Each node is something you’ve explored</b><span>Many chats about one topic become one node.</span></div></li>
+    <li><i class="lg lg-size"><em></em><em></em></i><div><b>Bigger means explored more</b><span>More conversations, more depth.</span></div></li>
+    <li><i class="lg lg-bright"><em></em><em></em></i><div><b>Brighter means more recent</b><span>Knowledge you haven’t touched in a while dims.</span></div></li>
+    <li><i class="lg lg-colors">${dots}</i><div><b>Colour is the area</b><span>${names}</span></div></li>
+    <li><i class="lg lg-line"></i><div><b>A line means related</b><span>Open any node to see why each of its links exists.</span></div></li>
+    <li><i class="lg lg-dust"></i><div><b>Faint dust is atmosphere</b><span>It gathers where you’re most active. It isn’t data you can open.</span></div></li>
+  </ul>
+  <h3 class="mono">What you can do</h3>
+  <ul class="doings">
+    <li><kbd>${COARSE?"Search":"/"}</kbd><span>Find a memory by name</span></li>
+    <li><kbd>${COARSE?"Tap":"Click"}</kbd><span>Open a node: what you learned, made, and the chats behind it</span></li>
+    <li><kbd>${COARSE?"Views":"1–5"}</kbd><span>See the same brain five ways</span></li>
+    <li><kbd>✦</kbd><span>Insights: your most connected idea, what’s new, what’s stalled</span></li>
+  </ul>
+  <button class="lbtn" data-tour>Replay the 3-step guide</button>`}
+function openHelp(){renderHelp();closeDrawer();helpEl.hidden=false;btnHelp.setAttribute("aria-expanded","true")}
+function closeHelp(){helpEl.hidden=true;btnHelp.setAttribute("aria-expanded","false")}
+btnHelp.addEventListener("click",()=>helpEl.hidden?openHelp():closeHelp());
+helpEl.addEventListener("click",e=>{if(e.target.closest("[data-help-close]"))closeHelp();else if(e.target.closest("[data-tour]")){closeHelp();startTour(true)}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!helpEl.hidden)closeHelp()});
+document.addEventListener("pointerdown",e=>{if(!helpEl.hidden&&!e.target.closest("#help,#btnHelp"))closeHelp()});
+
+/* first visit: three steps that point at the real brain, then get out of the way */
+const tourEl=document.getElementById("tour");
+const TOUR=[
+  {t:"Each node is something you’ve explored.",d:"Many chats about one topic become one node. Bigger means explored more. Brighter means more recent."},
+  {t:"Lines connect related ideas.",d:"Every line joins two related pieces of knowledge. Open any node to see why they’re linked."},
+  {t:"Now it’s yours to explore.",d:COARSE?"Search a topic, tap any node, or switch views below. The ? button explains the map any time.":"Search with /, click any node, or press 1–5 to see the same brain five ways. The ? button explains the map any time."}];
+let tourK=-1,tourSeen=!!readS("toured"),tourWait=0;
+function hubIdx(){const v=G.neurons.filter(n=>visible[n.idx]).sort((a,b)=>b.degree-a.degree||b.size-a.size);return v.length?v[0].idx:-1}
+function startTour(force){if(!force&&(tourSeen||readS("toured")))return;tourSeen=true;tourStep(0)}
+function tourStep(k){
+  tourK=k;const hub=hubIdx();if(k>=TOUR.length||hub<0){endTour();return}
+  if(k===0){S.focus=new Set([hub]);propagate(hub,{depth:0})}
+  else if(k===1){const set=new Set([hub,...G.adj[hub]]);S.focus=set;frameSet(set);propagate(hub,{depth:1})}
+  else{clearFocus();goHome(1.2)}
+  tourEl.innerHTML=`<p class="mono step">${k+1} / ${TOUR.length}</p><h3>${TOUR[k].t}</h3><p>${TOUR[k].d}</p>
+    <div class="row">${k<TOUR.length-1?`<button class="lbtn" data-tour-skip>Skip</button>`:""}<button class="cta-s" data-tour-next>${k<TOUR.length-1?"Next":"Start exploring"}</button></div>`;
+  tourEl.hidden=false}
+function endTour(){if(tourK<0)return;tourK=-1;tourEl.hidden=true;store("toured","1");if(S.sel<0&&!(S.insight>=0))clearFocus()}
+tourEl.addEventListener("click",e=>{if(e.target.closest("[data-tour-next]"))tourStep(tourK+1);else if(e.target.closest("[data-tour-skip]"))endTour()});
+// any real exploring ends the guide
+addEventListener("pointerdown",e=>{if(tourK>=0&&!e.target.closest("#tour,#help,#btnHelp"))endTour()},true);
+addEventListener("keydown",e=>{if(tourK>=0&&!e.target.closest("#tour"))endTour()},true);
+function tourTick(now){
+  if(tourSeen||!uiShown||!G||G.neurons.length<5||document.body.classList.contains("is-empty")||document.body.classList.contains("staged")||S.sel>=0||!scrim.hidden){tourWait=0;return}
+  if(!tourWait)tourWait=now+1400;else if(now>=tourWait)startTour(false)}
 function setRegion(k){S.region=k;applyFilters();renderNav();
   if(S.state==="engine"){refreshEngine();startMorph("engine",1.8)}
   if(k==="all")goHome(1.4);else{const set=G.neurons.filter(n=>n.region===k&&visible[n.idx]).map(n=>n.idx);if(set.length)frameSet(set)}
@@ -828,7 +907,7 @@ document.addEventListener("keydown",e=>{skipIntro();const typing=e.target.closes
   if(e.key==="/"&&!typing){e.preventDefault();q.focus()}
   else if(!typing&&/^[1-5]$/.test(e.key)&&scrim.hidden)setState(SKEYS[+e.key-1]);
   else if(e.key==="Escape"){if(!scrim.hidden)closeImport();else if(!drawer.hidden)closeDrawer();else if(S.sel>=0)closePanel();else if(S.focus){clearFocus();renderDrawer()}}});
-const hint=document.getElementById("hint");if(matchMedia("(pointer:coarse)").matches)hint.textContent="Drag to orbit · Pinch to zoom · Tap a neuron";
+const hint=document.getElementById("hint");if(matchMedia("(pointer:coarse)").matches)hint.textContent="Drag to orbit · Pinch to zoom · Tap a node · ? explains the map";
 let hintGone=false;function hideHint(){if(hintGone)return;hintGone=true;hint.style.opacity=0}
 
 /* =========================================================================

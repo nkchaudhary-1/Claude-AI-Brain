@@ -21,8 +21,17 @@ const base = `http://localhost:${port}/`;
 
 await mkdir(out, { recursive: true });
 // No .env: the local scenarios run without accounts, exactly like the claude.ai artifact.
-const server = spawn(process.execPath, [root + "scripts/serve.mjs", String(port), ...(useDist ? ["--dist"] : [])], { stdio: "ignore", env: { ...process.env, BRAIN_IGNORE_ENV: "1", SUPABASE_URL: "" } });
-await new Promise((r) => setTimeout(r, 400));
+const server = spawn(process.execPath, [root + "scripts/serve.mjs", String(port), ...(useDist ? ["--dist"] : [])], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BRAIN_IGNORE_ENV: "1", SUPABASE_URL: "" } });
+// Wait for *our* server to say it's listening, in the right mode. A stale server on the same port would
+// otherwise answer instead, and a --dist run would silently test the dev build.
+await new Promise((resolve, reject) => {
+  let log = "";
+  const done = (e) => { clearTimeout(timer); e ? reject(e) : resolve(); };
+  const timer = setTimeout(() => done(new Error("test server didn't start:\n" + log)), 8000);
+  server.stdout.on("data", (d) => { log += d; if (/My AI Brain →/.test(log)) done(useDist && !/production build/.test(log) ? new Error("server isn't serving dist/") : null); });
+  server.stderr.on("data", (d) => { log += d; });
+  server.on("exit", (code) => done(new Error(`test server exited (${code}); is port ${port} already in use?\n` + log)));
+});
 
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || undefined,
@@ -60,6 +69,13 @@ await scenario("desktop", { width: 1440, height: 900 }, [
   async (p) => { await p.click("#back"); await p.click("#btnInsights"); },
   async (p) => { await p.click("#btnInsights"); await p.$eval("#tl", (el) => { el.value = 400; el.dispatchEvent(new Event("input", { bubbles: true })); }); },
 ]);
+// Understanding the map: first-visit guide, the ? legend, and a reason on every link.
+await scenario("guide", { width: 1440, height: 900 }, [
+  async (p) => { await p.waitForSelector("#tour:not([hidden])", { timeout: 6000 }); if (!/Each node/.test(await p.textContent("#tour"))) throw new Error("guide step 1"); await p.click("[data-tour-next]"); },
+  async (p) => { if (!/Lines connect/.test(await p.textContent("#tour"))) throw new Error("guide step 2"); await p.click("[data-tour-next]"); await p.click("[data-tour-next]"); if (await p.isVisible("#tour")) throw new Error("guide didn't close"); await p.click("#btnHelp"); },
+  async (p) => { if (!/A line means related/.test(await p.textContent("#help"))) throw new Error("legend"); await p.keyboard.press("Escape"); await p.fill("#q", "design"); await p.keyboard.press("Enter"); },
+  async (p) => { const why = await p.$$eval(".orbs.rel .rw", (els) => els.map((e) => e.textContent)); if (!why.length || why.some((w) => !w.trim())) throw new Error("link reasons missing: " + JSON.stringify(why)); console.log("    why linked: " + why.slice(0, 3).join(" | ")); },
+], { wait: 5500 });
 // The five views morph the same data; each gets a screenshot once its morph settles.
 await scenario("states", { width: 1440, height: 900 }, [
   (p) => p.keyboard.press("2"),

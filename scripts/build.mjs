@@ -28,7 +28,7 @@ const { CONV, SEED } = await import(pathToFileURL(root + "src/data/seed.js").hre
 const { DEMO } = await import(pathToFileURL(root + "src/data/demo.js").href);
 const demoIds = new Set(DEMO.neurons.map((n) => n.id));
 if (demoIds.size !== DEMO.neurons.length) throw new Error("Duplicate ids in src/data/demo.js.");
-for (const n of DEMO.neurons) for (const c of n.connections) if (!demoIds.has(c)) throw new Error(`Demo neuron "${n.id}" links to unknown "${c}".`);
+for (const n of DEMO.neurons) for (const c of n.connections) { const id = typeof c === "object" ? c.id : c; if (!demoIds.has(id)) throw new Error(`Demo neuron "${n.id}" links to unknown "${id}".`); }
 const webScript = `${strip(demoSrc)}\nconst CONV = {};\nconst SEED = DEMO;\n` + app;
 const personal = [...SEED.neurons.flatMap((n) => [n.title, n.description, ...(n.learned || []), ...(n.created || []), ...(n.insights || [])]),
   ...Object.values(CONV).flatMap((c) => [c.title, c.summary])].filter((x) => typeof x === "string" && x.length >= 5 && x !== "My AI Brain"); // the product name itself

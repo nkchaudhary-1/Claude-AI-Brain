@@ -86,7 +86,7 @@ A neuron is authored in `src/data/seed.js` or imported as `brain.json` (schema i
 ```js
 { id, title, domains:["design","ai",...], type, status, visibility:"public"|"private", weight:1-5,
   createdAt?, updatedAt?, description, learned:[], created:[], insights:[], skills:[],
-  conversations:[{id?,title,date,summary}] | conv:["key into CONV"], connections:[ids], source?:"import" }
+  conversations:[{id?,title,date,summary}] | conv:["key into CONV"], connections:[id | {id, why}], source?:"import" }
 ```
 
 - `type`: foundation | skill | project | experiment | research | idea. This sets the layer, meaning depth inside the lobe.
@@ -94,6 +94,7 @@ A neuron is authored in `src/data/seed.js` or imported as `brain.json` (schema i
 - `createdAt`/`updatedAt` are derived from conversation dates when absent. `approx` conversations render as "By 15 Sep 2026".
 - `normalize()` accepts loose input (`category` strings, plural types, unknown statuses) and builds an undirected edge list, `adj`, `degree`, `activity` (recency) and `size`.
 - `density` scales brightness and size down past 250 neurons so large brains don't blow out.
+- A connection may carry its reason: `{id, why}` (the demo brain writes one for every link). Otherwise `linkWhy()` computes it from what the two share, in order: a conversation, a skill, distinctive words (rare across the brain), an area; else "Similar topics in your chats" (imports) or "Linked by hand". Never guessed.
 - `source:"import"` marks neurons the importer created; conversation `id` is the claude.ai uuid. Both drive re-import merging.
 
 ## Importer
@@ -141,7 +142,15 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input comes 
 | 19 | No service-role key | Nothing needs to bypass RLS; one less secret | Account deletion or scheduled sync |
 | 20 | Grouping runs in the browser; only derived knowledge is uploaded | Privacy, and exports can exceed Vercel's 4.5 MB body limit | — |
 | 21 | Hosted demo = a general-knowledge brain, not the public part of the personal seed | The remaining public nodes were still Neelesh’s real projects; a concept brain is useful to read and personal to no one | Public view launches on neelesh.one |
+| 22 | Explain links in the panel + a `?` legend + a skippable 3-step guide, not a permanent overlay | Comprehension without cluttering the brain; the reason sits where the curiosity is (an open node) | Hovering a line directly, or Claude-written reasons from the import pass |
 | 16 | Emerging layer = exploring / experimenting / in-progress and updated in the last 30 days | Honest, data-derived stand-in for "emerging intelligence" | The Claude insight pass lands |
+
+### Making the map understandable
+People didn't know what a node is, why two are linked, or what to do. Three layers answer that, all in `main.js` after `clearFocus()`:
+- **Why linked:** the memory panel's "Connected to" list gives a reason under every link (`linkWhy`); the hover tooltip names a node's top connections.
+- **How to read it:** the `?` button opens a legend (node, size, brightness, colour, line, dust) and what you can do. It's always there.
+- **First visit:** a 3-step guide (`TOUR`) after the intro, once (`aibrain:toured`): it spotlights the most connected node, then its links, then hands over. Any real interaction ends it; it waits while a stage (landing, auth…) is up. "Replay the 3-step guide" lives in the legend.
+User-facing copy says **node**, matching the "Knowledge nodes" metric.
 
 ## Deviations from the art direction
 - Real counts, not the brief's numbers. "Hundreds of nodes per cluster" comes from structure particles; only the bright nodes are knowledge.

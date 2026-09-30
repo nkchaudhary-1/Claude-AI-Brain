@@ -37,6 +37,7 @@
       <div class="results" id="results" role="listbox" hidden></div>
     </div>
     <button class="ibtn" id="btnTime" aria-label="Time" title="Time"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+    <button class="ibtn" id="btnHelp" aria-label="How to read this map" title="How to read this map" aria-expanded="false" aria-controls="help"><span class="q" aria-hidden="true">?</span></button>
     <button class="ibtn" id="btnInsights" aria-pressed="false" aria-label="Insights" title="Insights"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.5 4 4 1.5-4 1.5L8 12.5 6.5 8.5l-4-1.5 4-1.5L8 1.5z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg></button>
     <button class="ibtn" id="btnImport" aria-label="Import Claude data" title="Import Claude data"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="vbtn" id="btnView" title="Private shows everything. Public hides client and personal work."></button>
@@ -60,7 +61,8 @@
   <button class="ibtn" id="zin" aria-label="Zoom in"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
   <button class="orb" id="orb" aria-label="Show the whole brain"></button>
 </div>
-<div class="hint mono ui" id="hint" style="--d:6">Drag to orbit · Scroll to zoom · Click a neuron · 1–5 change view</div>
+<div class="hint mono ui" id="hint" style="--d:6">Drag to orbit · Scroll to zoom · Click a node · 1–5 change view · ? explains the map</div>
+<div class="tour" id="tour" hidden role="dialog" aria-live="polite" aria-label="Quick guide"></div>
 
 <div class="ctx mono" id="ctx" hidden><button data-d="-1" aria-label="Previous related neuron">‹</button><span></span><button data-d="1" aria-label="Next related neuron">›</button></div>
 <button class="back" id="back"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Back to the network</button>
@@ -73,6 +75,7 @@
 </aside>
 
 <div class="drawer" id="drawer" hidden aria-label="Insights"></div>
+<div class="drawer help" id="help" hidden role="dialog" aria-labelledby="helpTitle"></div>
 
 <div class="scrim" id="importScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="impTitle">
