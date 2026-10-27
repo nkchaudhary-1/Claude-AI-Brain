@@ -1,13 +1,13 @@
 # My AI Brain
 
-A living spatial network of everything you’ve explored, learned and built with AI. Five views of one mind: Flow, Orb, Layers, Galaxy, Engine. Sign in, bring in your Claude or ChatGPT history, and your conversations become knowledge nodes, clusters and connections.
+A living spatial network of everything you’ve explored, learned and built with AI. Five views of one mind: Flow, Orb, Layers, Galaxy, Engine. Paste anything you read and its key ideas join the map, connected to what you know; **Recall** brings them back on a schedule so you remember them, and the **Library** keeps every article, quote and note as a list you can search and download. You can also bring in your Claude or ChatGPT history.
 
 ```bash
 npm install
 npm run dev      # http://localhost:5173 — source + /api functions (reads .env.local)
 npm run build    # dist/ (the hosted app) + dist-artifact/artifact.html (personal claude.ai artifact)
 npm run start    # serves dist/ + /api with vercel.json's headers, like production
-npm test         # importer, row-level-security and browser smoke tests
+npm test         # importer, learn, recall, row-level-security and browser smoke tests
 npm run test:integration   # real Postgres + PostgREST end to end (needs Docker)
 ```
 
@@ -39,6 +39,7 @@ Supabase  Auth (Google, GitHub, email link) · Postgres with row level security
 | `api/session.js`, `api/config.js` | who is signed in; whether accounts are configured |
 | `api/brain/index.js` | GET load (creates profile + brain on first visit), PATCH rename, DELETE brain |
 | `api/brain/import.js` | incremental sync: `start` → `batch` (≤300 nodes) → `finish` |
+| `api/brain/nodes.js` | PATCH the person’s own fields on existing nodes: their note and recall progress (≤50 per call) |
 | `api/brain/data.js` | DELETE imported data |
 | `api/sources.js` | connected AI: list, connect, disconnect, sync |
 | `supabase/migrations/` | schema, indexes, RLS, signup trigger |
@@ -79,6 +80,16 @@ Paste any article link (header **＋ Add a link**, or the box on the landing pag
 - **What it can't read:** paywalled or login pages, sites that block bots, pages that build their text with JavaScript, and PDFs. Use **Paste the text** instead; the result is the same.
 - **Where it's saved:** signed in, to your account; otherwise in this browser. On the demo brain, it stays for that visit only.
 - **Setup:** none. It runs on Vercel's free plan with no API key.
+
+## Remember what you read
+
+Saving an article is only useful if you can find it and still know what it said a month later. Three things do that, all free and without AI:
+
+- **Recall** (header ↻, with a count when something is waiting). Each card is a sentence you saved, an article's quoted key idea or a line you learned, with one distinctive word hidden. Say it, check it, mark *Remembered* or *Forgot*. Remembered cards come back after 1, 3, 7, 16, 35, then 90 days; forgotten ones return tomorrow (and once more at the end of the session). Up to 5 new cards a day; an article you add today starts tomorrow. A small nudge appears once a day when cards are waiting. Every node with recallable lines shows where it stands and a **Recall it now** button.
+- **Library** (header ☰). Every article with its key ideas, every topic, and your notes, newest first. Search covers titles, quotes, keywords and notes. **Download as Markdown** exports it all with links back to each source and passage.
+- **Your note** on any node: why it matters to you, or what you'll do with it. It's shown apart from the quote, and search finds it.
+
+Signed in, notes and recall progress are saved to your account as they happen (`PATCH /api/brain/nodes`, stored in `knowledge_nodes.metadata.note` and `.review`). Otherwise they're kept in this browser (`localStorage["aibrain:mine"]`, by node id), which also works on the demo brain.
 
 ## Import your history
 

@@ -38,6 +38,8 @@
     </div>
     <button class="ibtn" id="btnTime" aria-label="Time" title="Time"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
     <button class="vbtn learn-btn" id="btnLearn" aria-label="Add a link" title="Add a link: learn from any article"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="lbl">Add a link</span></button>
+    <button class="vbtn recall-btn" id="btnRecall" aria-label="Recall" title="Recall: what you saved comes back so it sticks"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.2 6.2A5.4 5.4 0 103 9.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M13.6 2.8v3.6H10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">Recall</span><b class="badge" id="recallBadge" hidden></b></button>
+    <button class="ibtn" id="btnLibrary" aria-label="Library" title="Library: everything you’ve saved" aria-expanded="false" aria-controls="library"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
     <button class="ibtn" id="btnHelp" aria-label="How to read this map" title="How to read this map" aria-expanded="false" aria-controls="help"><span class="q" aria-hidden="true">?</span></button>
     <button class="ibtn" id="btnInsights" aria-pressed="false" aria-label="Insights" title="Insights"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.5 4 4 1.5-4 1.5L8 12.5 6.5 8.5l-4-1.5 4-1.5L8 1.5z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg></button>
     <button class="ibtn" id="btnImport" aria-label="Import Claude data" title="Import Claude data"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -94,6 +96,14 @@
   </div>
 </div>
 <div class="drawer help" id="help" hidden role="dialog" aria-labelledby="helpTitle"></div>
+<aside class="library" id="library" hidden aria-labelledby="libTitle"></aside>
+<div class="nudge" id="nudge" hidden role="status" aria-live="polite"></div>
+<div class="scrim" id="recallScrim" hidden>
+  <div class="sheet recall" role="dialog" aria-modal="true" aria-labelledby="recallTitle">
+    <button class="ibtn x" id="recallClose" aria-label="Close recall"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+    <div id="recallBody"></div>
+  </div>
+</div>
 
 <div class="scrim" id="importScrim" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="impTitle">
@@ -147,7 +157,8 @@
 
 <section class="stage landing" id="landing" hidden aria-labelledby="landingTitle">
   <p class="mono eyebrow">My AI Brain</p>
-  <h1 id="landingTitle">Paste anything you read. Watch it connect to what you know.</h1>
+  <h1 id="landingTitle">Paste anything you read. Remember it for good.</h1>
+  <p class="lead">Its key ideas are quoted, linked to what you already know, and brought back in a two-minute recall so they stick.</p>
   <form class="landing-learn" id="landingLearn"><input id="landingUrl" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="Paste an article link" aria-label="Article link"><button class="cta" type="submit">Map it</button></form>
   <div class="row"><button class="ghost" id="landingBuild">Build My AI Brain</button><button class="ghost" id="landingDemo">Explore the demo</button></div>
   <p class="fine">Free. Every key idea is quoted from the page, never rewritten by AI. Your brain is private to your account.</p>
@@ -175,6 +186,7 @@
   <h2 id="welcomeTitle">Welcome to your Brain.</h2>
   <p class="sub" id="welcomeSub">Connect the AI tools you use and turn your conversations into a living knowledge network.</p>
   <div class="choices">
+    <button data-act="learn"><b>Add your first link</b><span>Paste an article; its key ideas join your Brain and come back in Recall</span></button>
     <button data-act="connect-claude"><b>Connect Claude</b><span>Bring in your claude.ai export</span></button>
     <button data-act="connect-chatgpt"><b>Connect ChatGPT</b><span>Bring in your ChatGPT export</span></button>
     <button data-act="import"><b>Import Data</b><span>A brain.json or any AI export</span></button>

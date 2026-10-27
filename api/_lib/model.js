@@ -3,15 +3,17 @@
 //
 //   knowledge_nodes row ←→ node { id (stable key), title, domains, type, status, visibility, weight,
 //                                 createdAt, updatedAt, description, learned, created, insights,
-//                                 skills, conversations, source }
+//                                 skills, conversations, source, link, linkWhy, note, review }
 //   connections row     ←→ { source, target, strength, type }   (node keys, not row ids)
+
+import { Recall } from "../../src/recall/core.js";
 
 export const TYPES = ["foundation", "skill", "project", "experiment", "research", "idea"];
 export const DOMAINS = ["design", "ai", "product", "dev", "career"];
 export const REGIONS = ["design", "ai", "product", "dev", "research", "ideas"];
 export const STATUSES = ["learned", "exploring", "built", "experimenting", "archived", "in-progress", "paused", "idea"];
 export const PROVIDERS = ["claude", "chatgpt", "import"];
-export const LIMITS = { nodesPerBatch: 300, listItems: 50, itemChars: 500, conversations: 1000, connections: 300 };
+export const LIMITS = { nodesPerBatch: 300, listItems: 50, itemChars: 500, conversations: 1000, connections: 300, noteChars: 2000, patchNodes: 50 };
 const DAY = 864e5;
 
 const str = (v, max) => (typeof v === "string" ? v : v == null ? "" : String(v)).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, max);
@@ -63,7 +65,7 @@ export function cleanNode(raw, now = Date.now()) {
         visibility: raw.visibility === "public" ? "public" : "private",
         learned: list(raw.learned), created: list(raw.created), insights: list(raw.insights), skills: list(raw.skills, 20),
         conversations, first_seen: firstSeen, last_seen: lastSeen, source: raw.source === "import" ? "import" : "curated",
-        ...cleanLink(raw.link), ...cleanWhy(raw.linkWhy, key),
+        ...cleanLink(raw.link), ...cleanWhy(raw.linkWhy, key), ...cleanMine(raw),
       },
     },
     connections: [...new Set((Array.isArray(raw.connections) ? raw.connections : []).map(cleanKey).filter((k) => k && k !== key))].slice(0, LIMITS.connections),
@@ -82,6 +84,13 @@ function cleanLink(l) {
       : { quote: str(l.quote, 600), section: str(l.section, 140) || null, source: cleanKey(l.source) }),
   } };
 }
+// What the person adds themselves: their note, and where each recall card stands (see src/recall/core.js).
+export function cleanMine(raw) {
+  const out = {};
+  if (raw && "note" in raw) { const note = str(raw.note, LIMITS.noteChars); if (note) out.note = note; }
+  if (raw && raw.review) { const review = Recall.cleanReview(raw.review); if (Object.keys(review).length) out.review = review; }
+  return out;
+}
 // Why this node links to others: { otherKey: "Both about habit" }.
 function cleanWhy(w, key) {
   if (!w || typeof w !== "object") return {};
@@ -98,6 +107,7 @@ export function toClientNode(row) {
     description: row.description || "", learned: m.learned || [], created: m.created || [], insights: m.insights || [], skills: m.skills || [],
     conversations: m.conversations || [], ...(m.source === "import" ? { source: "import" } : {}),
     ...(m.link ? { link: m.link } : {}), ...(m.why ? { linkWhy: m.why } : {}),
+    ...(m.note ? { note: m.note } : {}), ...(m.review ? { review: m.review } : {}),
   };
 }
 

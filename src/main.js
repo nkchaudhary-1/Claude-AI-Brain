@@ -1,5 +1,6 @@
 import { CONV, SEED } from "./data/seed.js";
 import { Learn } from "./learn/core.js";
+import { Recall } from "./recall/core.js";
 import { Importer } from "./importer/core.js";
 import { Cloud } from "./cloud.js";
 
@@ -64,7 +65,8 @@ function normalize(raw){
       status:STATUS_LABEL[r.status]?r.status:(type==="idea"?"idea":String(r.status||"exploring").toLowerCase().replace(/\s+/g,"-")),
       visibility:r.visibility==="private"?"private":"public",weight:Math.max(1,Math.min(5,+r.weight||2)),
       description:String(r.description||""),learned:arr(r.learned),created:arr(r.created),insights:arr(r.insights),skills:arr(r.skills),
-      conversations:convs,createdAt,updatedAt,_conn:linkIds(r.connections),_why:{...whyMap(r.linkWhy),...linkWhys(r.connections)},link:linkOf(r.link),synthetic:!!r.synthetic,source:r.source==="import"?"import":undefined};
+      conversations:convs,createdAt,updatedAt,_conn:linkIds(r.connections),_why:{...whyMap(r.linkWhy),...linkWhys(r.connections)},link:linkOf(r.link),synthetic:!!r.synthetic,source:r.source==="import"?"import":undefined,
+      note:typeof r.note==="string"?r.note.trim().slice(0,2000):"",review:Recall.cleanReview(r.review)};
     n.region=regionOf(n);n.idx=neurons.length;neurons.push(n);byId.set(id,n);
   });
   const adj=neurons.map(()=>new Set()),edges=[],eIdx=new Map(),why=new Map();
@@ -85,7 +87,7 @@ const edgeOf=(a,b)=>{const k=Math.min(a,b)*1e6+Math.max(a,b);return G.eIdx.has(k
 function exportData(G){return{version:2,neurons:G.neurons.map(n=>({id:n.id,title:n.title,category:n.domains.map(d=>DOMAINS[d].label).join(" / "),domains:n.domains,type:n.type,status:n.status,visibility:n.visibility,weight:n.weight,
   createdAt:n.createdAt?iso(n.createdAt):null,updatedAt:n.updatedAt?iso(n.updatedAt):null,description:n.description,learned:n.learned,created:n.created,insights:n.insights,skills:n.skills,
   source:n.source,conversations:n.conversations.map(c=>({id:c.id,title:c.title,date:c.date,summary:c.summary})),connections:[...G.adj[n.idx]].map(i=>G.neurons[i].id),
-  ...(n.link?{link:n.link}:{}),linkWhy:Object.fromEntries([...G.adj[n.idx]].map(i=>[G.neurons[i].id,G.why.get(Math.min(n.idx,i)*1e6+Math.max(n.idx,i))]).filter(([,w])=>w))}))}}
+  ...(n.link?{link:n.link}:{}),...(n.note?{note:n.note}:{}),...(Object.keys(n.review).length?{review:n.review}:{}),linkWhy:Object.fromEntries([...G.adj[n.idx]].map(i=>[G.neurons[i].id,G.why.get(Math.min(n.idx,i)*1e6+Math.max(n.idx,i))]).filter(([,w])=>w))}))}}
 const iso=t=>new Date(t).toISOString().slice(0,10);
 const fmtDate=(t,approx)=>t==null?"Date not recorded":(approx?"By ":"")+new Date(t).getDate()+" "+MONTHS[new Date(t).getMonth()]+" "+new Date(t).getFullYear();
 const fmtMonth=t=>t==null?"Not recorded":MONTHS[new Date(t).getMonth()]+" "+new Date(t).getFullYear();
@@ -388,7 +390,7 @@ function frame(now){
     if(intro>=introCap){introCam=false}}
   if(!uiShown&&intro>=Math.min(introCap,.97)){uiShown=true;document.body.classList.remove("intro");measureSafe()}
   updateIntroCaption(intro);
-  tourTick(now);
+  tourTick(now);nudgeTick(now);
   const idle=!REDUCED&&S.sel<0&&!tween&&!introCam&&now-lastInteract>5000&&!pointers.size;
   sway+=((idle?1:0)-sway)*Math.min(1,dt*.5);
   par.x+=(par.tx-par.x)*Math.min(1,dt*2.2);par.y+=(par.ty-par.y)*Math.min(1,dt*2.2);
@@ -646,7 +648,7 @@ function select(i,how){
   if(first){S.saved={t:[...cam.t],r:cam.r,th:cam.th,ph:cam.ph,sx:cam.sx,sy:cam.sy};lastFocus=document.activeElement}
   if(how==="trail")S.trail=S.trail.slice(0,S.trail.indexOf(i)+1);else if(how==="rel")S.trail.push(i);else S.trail=[i];
   if(S.trail.length>6)S.trail=S.trail.slice(-6);
-  S.sel=i;setHover(-1);closeDrawer();tab="overview";introCam=false;
+  S.sel=i;setHover(-1);closeDrawer();tab="overview";noteEdit=false;introCam=false;
   S.rel=[...G.adj[i]].filter(j=>visible[j]).sort((a,b)=>G.neurons[b].size-G.neurons[a].size);S.relIdx=-1;
   const ph=phone();
   flyTo({t:tpos(i),r:ph?19:15,ph:1.36,sx:ph?0:-Math.min(440,W)/2+40,sy:ph?-H*.3:0},first?1.8:1.6);
@@ -722,12 +724,14 @@ function renderPanel(anim){
       ${n.visibility==="private"?`<span class="priv mono"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2" stroke="currentColor" stroke-width="1.3"/></svg>Private</span>`:""}</div>
   </div>
   ${n.description?(L&&L.kind==="idea"?`<blockquote class="p-quote rv" style="--i:3">“${esc(n.description)}”</blockquote>`:`<p class="p-desc rv" style="--i:3">${esc(n.description)}</p>`):""}
+  ${recallLine(n)}${noteBlock(n)}
   ${tabs.length>1?`<div class="tabs rv" style="--i:4" role="tablist">${tabs.map(([k,l,c])=>`<button role="tab" data-tab="${k}" aria-selected="${tab===k}">${l}${c?`<sup>${c}</sup>`:""}</button>`).join("")}</div>`:""}
   <div class="tabpanel" role="tabpanel">${body}</div>`;
   pBody.classList.remove("anim");if(anim){void pBody.offsetWidth;pBody.classList.add("anim")}
   panel.setAttribute("aria-labelledby","pTitle");
 }
-pBody.addEventListener("click",e=>{const r=e.target.closest("[data-rel]");if(r)return travel(+r.dataset.rel,"rel");const t=e.target.closest("[data-trail]");if(t)return travel(+t.dataset.trail,"trail");
+pBody.addEventListener("click",e=>{if(noteClick(e))return;const rc=e.target.closest("[data-recall-node]");if(rc)return openRecall({node:+rc.dataset.recallNode});
+  const r=e.target.closest("[data-rel]");if(r)return travel(+r.dataset.rel,"rel");const t=e.target.closest("[data-trail]");if(t)return travel(+t.dataset.trail,"trail");
   const tb=e.target.closest("[data-tab]");if(tb){tab=tb.dataset.tab;renderPanel(false);const b=pBody.querySelector(`[data-tab="${tab}"]`);b&&b.focus()}});
 pBody.addEventListener("pointerover",e=>{const r=e.target.closest("[data-rel]");S.hover=r?+r.dataset.rel:-1});
 pBody.addEventListener("pointerleave",()=>{S.hover=-1});
@@ -772,7 +776,9 @@ function renderHelp(){
   <h3 class="mono">What you can do</h3>
   <ul class="doings">
     <li><kbd>＋</kbd><span>Add a link: any article’s key ideas become nodes, connected to what you know</span></li>
-    <li><kbd>${COARSE?"Search":"/"}</kbd><span>Find a memory by name</span></li>
+    <li><kbd>↻</kbd><span>Recall: what you saved comes back for a two-minute check, so you remember it</span></li>
+    <li><kbd>☰</kbd><span>Library: every article, key idea and note you’ve saved, as a list you can search and download</span></li>
+    <li><kbd>${COARSE?"Search":"/"}</kbd><span>Find a memory by name, or by anything in its quote or your note</span></li>
     <li><kbd>${COARSE?"Tap":"Click"}</kbd><span>Open a node: what you learned, made, and the chats behind it</span></li>
     <li><kbd>${COARSE?"Views":"1–5"}</kbd><span>See the same brain five ways</span></li>
     <li><kbd>✦</kbd><span>Insights: your most connected idea, what’s new, what’s stalled</span></li>
@@ -790,7 +796,7 @@ const tourEl=document.getElementById("tour");
 const TOUR=[
   {t:"Each node is something you’ve explored.",d:"Many chats about one topic become one node. Bigger means explored more. Brighter means more recent."},
   {t:"Lines connect related ideas.",d:"Every line joins two related pieces of knowledge. Open any node to see why they’re linked."},
-  {t:"Now make it yours.",d:COARSE?"Tap ＋ and paste any article link: its key ideas join the map, connected to what’s already here. Or tap any node to explore.":"Press ＋ Add a link and paste any article: its key ideas join the map, connected to what’s already here. Or click any node, or press 1–5 for other views."}];
+  {t:"Now make it yours.",d:COARSE?"Tap ＋ and paste any article link: its key ideas join the map, and Recall brings them back so they stick. Or tap any node to explore.":"Press ＋ Add a link and paste any article: its key ideas join the map, and Recall brings them back so they stick. Or click any node, or press 1–5 for other views."}];
 let tourK=-1,tourSeen=!!readS("toured"),tourWait=0;
 function hubIdx(){const v=G.neurons.filter(n=>visible[n.idx]).sort((a,b)=>b.degree-a.degree||b.size-a.size);return v.length?v[0].idx:-1}
 function startTour(force){if(!force&&(tourSeen||readS("toured")))return;tourSeen=true;tourStep(0)}
@@ -824,9 +830,10 @@ function search(str){str=str.trim().toLowerCase();if(!str)return[];const terms=s
   G.neurons.forEach(n=>{if(!visible[n.idx])return;let score=0,via="";const t=n.title.toLowerCase();
     if(t===str)score+=10;else if(t.startsWith(str))score+=7;else if(t.includes(str))score+=5;
     if(REGIONS[n.region].label.toLowerCase().startsWith(str))score+=2;
+    if(!score&&n.note&&terms.every(w=>n.note.toLowerCase().includes(w))){score+=2.5;via="Your note · "+short(n.note,60)}
     if(!score){const sk=n.skills.find(s=>terms.every(w=>s.toLowerCase().includes(w)));if(sk){score+=3;via="Skill · "+sk}
       const cv=!sk&&n.conversations.find(c=>terms.every(w=>(c.title+" "+c.summary).toLowerCase().includes(w)));if(cv){score+=2;via="Conversation · "+cv.title}
-      if(!sk&&!cv){const blob=[n.description,...n.learned,...n.created,...n.insights].join(" ").toLowerCase();if(terms.every(w=>blob.includes(w))){score+=1.5;via="Mentioned in notes"}}}
+      if(!sk&&!cv){const blob=[n.description,...n.learned,...n.created,...n.insights,...(n.link?n.link.keywords:[])].join(" ").toLowerCase();if(terms.every(w=>blob.includes(w))){score+=1.5;via=n.link&&n.link.kind==="idea"?"In the quote":"Mentioned in notes"}}}
     if(score)out.push({n,score:score+n.size*.01,via})});return out.sort((a,b)=>b.score-a.score)}
 function renderResults(){const str=q.value.trim();document.body.classList.toggle("searching",!!str);if(!str){results.hidden=true;q.setAttribute("aria-expanded","false");return}
   results.hidden=false;q.setAttribute("aria-expanded","true");
@@ -933,8 +940,8 @@ document.getElementById("orb").addEventListener("click",()=>{if(S.sel>=0)closePa
 document.getElementById("btnTime").addEventListener("click",()=>document.body.classList.toggle("tl-open"));
 document.addEventListener("keydown",e=>{skipIntro();const typing=e.target.closest&&e.target.closest("input,textarea");
   if(e.key==="/"&&!typing){e.preventDefault();q.focus()}
-  else if(!typing&&/^[1-5]$/.test(e.key)&&scrim.hidden)setState(SKEYS[+e.key-1]);
-  else if(e.key==="Escape"){if(!scrim.hidden)closeImport();else if(!drawer.hidden)closeDrawer();else if(S.sel>=0)closePanel();else if(S.focus){clearFocus();renderDrawer()}}});
+  else if(!typing&&/^[1-5]$/.test(e.key)&&scrim.hidden&&recallScrim.hidden)setState(SKEYS[+e.key-1]);
+  else if(e.key==="Escape"&&recallScrim.hidden&&libEl.hidden){if(!scrim.hidden)closeImport();else if(!drawer.hidden)closeDrawer();else if(S.sel>=0)closePanel();else if(S.focus){clearFocus();renderDrawer()}}});
 const hint=document.getElementById("hint");if(matchMedia("(pointer:coarse)").matches)hint.textContent="Drag to orbit · Pinch to zoom · Tap a node · ? explains the map";
 let hintGone=false;function hideHint(){if(hintGone)return;hintGone=true;hint.style.opacity=0}
 
@@ -1032,8 +1039,9 @@ async function addLearned(dg,ui){
   const demo=MODE==="app"&&!ownBrain()&&!localBrain();
   const current=ownBrain()?APP.base:demo?exportData(G).neurons:importBase();
   const r=Learn.toNeurons(dg,current);
+  const prev=new Map(current.map(n=>[n.id,n]));r.neurons.forEach(n=>{const p=prev.get(n.id);if(p&&p.note)n.note=p.note;if(p&&p.review)n.review=p.review});
   const brain={neurons:[...current.filter(n=>n.id!==r.sourceId&&!(n.link&&n.link.source===r.sourceId)),...r.neurons]};
-  const text=`Mapped “${short(dg.page.title,60)}”: ${dg.ideas.length} key ${dg.ideas.length===1?"idea":"ideas"}${r.linked?`, ${r.linked} ${r.linked===1?"link":"links"} to what you know`:""}.`;
+  const text=`Mapped “${short(dg.page.title,60)}”: ${dg.ideas.length} key ${dg.ideas.length===1?"idea":"ideas"}${r.linked?`, ${r.linked} ${r.linked===1?"link":"links"} to what you know`:""}. They come back in Recall tomorrow.`;
   if(demo){load(brain,"regrow");ui.msg.className="msg";ui.msg.textContent=text;setBanner("Added to the demo for this visit","Keep my own brain",()=>openAuth());setTimeout(ui.close,900)}
   else await commitBrain(brain,"import",text,ui);
   focusLearned(r.sourceId)}
@@ -1052,6 +1060,180 @@ let pendingLearn=(()=>{try{const q=new URLSearchParams(location.search),v=q.get(
   history.replaceState(null,"",location.pathname+(q.toString()?"?"+q:"")+location.hash);return v.slice(0,2000)}catch(e){return null}})();
 function runPendingLearn(){if(!pendingLearn)return false;const v=pendingLearn;pendingLearn=null;tourSeen=true;setTimeout(()=>{openLearn(v);submitLearn(v)},500);return true}
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!learnScrim.hidden)closeLearn()});
+/* YOURS — what the person adds: a note on any node, and where each recall card stands.
+   Signed in → saved to the account as it happens. Otherwise → this browser, keyed by node id, so it
+   survives re-imports and works on the seed and the demo too. */
+const pendingMine=new Map();let mineTimer=0,mineTries=0;
+function mineAll(){try{const m=JSON.parse(readS("mine")||"{}");return m&&typeof m==="object"&&!Array.isArray(m)?m:{}}catch(e){return{}}}
+function applyMine(g){const m=mineAll();g.neurons.forEach(n=>{const x=m[n.id];if(!x||typeof x!=="object")return;
+  if(typeof x.note==="string")n.note=x.note.trim().slice(0,2000);if(x.review)n.review={...n.review,...Recall.cleanReview(x.review)}})}
+function saveMine(n){
+  if(ownBrain()){const b=APP.base.find(x=>x.id===n.id);if(b){b.note=n.note||undefined;b.review=Object.keys(n.review).length?{...n.review}:undefined}
+    pendingMine.set(n.id,{id:n.id,note:n.note||"",review:n.review});clearTimeout(mineTimer);mineTimer=setTimeout(flushMine,700);return}
+  const m=mineAll(),x={};if(n.note)x.note=n.note;if(Object.keys(n.review).length)x.review=n.review;
+  if(Object.keys(x).length)m[n.id]=x;else delete m[n.id];store("mine",JSON.stringify(m))}
+async function flushMine(){if(!pendingMine.size||!ownBrain())return;const nodes=[...pendingMine.values()].slice(0,50);nodes.forEach(x=>pendingMine.delete(x.id));
+  try{await Cloud.patchNodes(nodes);mineTries=0;if(banner.dataset.k==="mine")setBanner(null);if(pendingMine.size)flushMine()}
+  catch(e){nodes.forEach(x=>{if(!pendingMine.has(x.id))pendingMine.set(x.id,x)});
+    if(e.status===401)return enterGuest("expired","regrow");
+    if(++mineTries<3){clearTimeout(mineTimer);mineTimer=setTimeout(flushMine,2500*mineTries);return}
+    setBanner("Your latest notes and recall progress aren’t saved yet","Try again",()=>{mineTries=0;flushMine()});banner.dataset.k="mine"}}
+// leaving the page mid-save: send what's left without waiting for an answer
+addEventListener("pagehide",()=>{if(!pendingMine.size||!ownBrain())return;try{fetch("/api/brain/nodes",{method:"PATCH",keepalive:true,credentials:"same-origin",
+  headers:{"content-type":"application/json","x-brain-request":"1"},body:JSON.stringify({nodes:[...pendingMine.values()].slice(0,50)})})}catch(e){}});
+
+/* your note, in the panel: your words next to the quote, never mixed into it */
+let noteEdit=false;
+function noteBlock(n){
+  if(noteEdit)return`<div class="note-ed rv" style="--i:4"><label class="mono" for="noteIn">Your note</label><textarea id="noteIn" maxlength="2000" rows="3" placeholder="Why it matters to you, or what you’ll do with it">${esc(n.note)}</textarea>
+    <div class="row"><span class="mono">${COARSE?"":"⌘↵ to save"}</span><button class="lbtn" data-note-cancel>Cancel</button><button class="cta-s" data-note-save>Save note</button></div></div>`;
+  if(n.note)return`<section class="sec mine rv" style="--i:4"><h4 class="mono">Your note</h4><p>${esc(n.note)}</p><button class="lbtn" data-note-edit>Edit note</button></section>`;
+  return`<button class="lbtn add-note rv" style="--i:4" data-note-edit>＋ Add your note</button>`}
+function noteClick(e){const n=G.neurons[S.sel];if(!n)return false;
+  if(e.target.closest("[data-note-edit]")){noteEdit=true;renderPanel(false);const t=document.getElementById("noteIn");if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}return true}
+  if(e.target.closest("[data-note-cancel]")){noteEdit=false;renderPanel(false);return true}
+  if(e.target.closest("[data-note-save]")){saveNote(n);return true}return false}
+function saveNote(n){const t=document.getElementById("noteIn");if(!t)return;n.note=t.value.trim().slice(0,2000);noteEdit=false;saveMine(n);renderPanel(false);if(!libEl.hidden)renderLibrary();
+  const b=pBody.querySelector("[data-note-edit]");b&&b.focus({preventScroll:true})}
+pBody.addEventListener("keydown",e=>{if(e.target.id!=="noteIn")return;e.stopPropagation();
+  if(e.key==="Escape"){noteEdit=false;renderPanel(false)}else if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();const n=G.neurons[S.sel];n&&saveNote(n)}});
+// where a node's ideas stand in recall
+function recallLine(n){const its=Recall.itemsOf(n);if(!its.length)return"";const today=Recall.dayOf(Date.now());
+  const st=its.map(x=>Recall.cleanState(n.review[x.key])).filter(Boolean),due=st.filter(x=>x[1]<=today).length,next=st.length?Math.min(...st.map(x=>x[1])):null;
+  const what=its.length===1?(n.link?"This idea":"This line"):`${its.length} lines`;
+  const when=due?`${due===its.length&&its.length>1?"all due":"due"} today`:st.length?`next ${fmtDay(next)}`:`${its.length===1?"joins":"join"} recall soon`;
+  return`<p class="rc-line rv" style="--i:3"><span class="mono">↻ ${what} · ${when}</span><button class="lbtn" data-recall-node="${n.idx}">Recall ${its.length===1?"it":"them"} now</button></p>`}
+const fmtDay=k=>{const t=Recall.dateOfDay(k),d=k-Recall.dayOf(Date.now());return d<=0?"today":d===1?"tomorrow":new Date(t).getDate()+" "+MONTHS[new Date(t).getMonth()]};
+
+/* RECALL — what you saved comes back on a schedule, so it sticks. One hidden word per card, from the exact
+   sentence you saved; remember it and the gap grows (1, 3, 7, 16, 35, 90 days). No AI, nothing rewritten. */
+const recallScrim=document.getElementById("recallScrim"),recallBody=document.getElementById("recallBody"),btnRecall=document.getElementById("btnRecall");
+let RS=null;
+const viewNodes=()=>G?G.neurons.filter(n=>S.view==="private"||n.visibility!=="private"):[];
+function renderRecallBtn(){const c=Recall.counts(Recall.items(viewNodes())),b=document.getElementById("recallBadge");
+  b.hidden=!c.waiting;b.textContent=c.waiting;btnRecall.setAttribute("aria-label",c.waiting?`Recall: ${c.waiting} waiting`:"Recall");return c}
+function openRecall({practise=false,node=null}={}){closeHelp();closeLibrary();hideNudge(true);if(tourK>=0)endTour();
+  const all=Recall.items(viewNodes());let q;
+  if(node!=null){const n=G.neurons[node];q=all.filter(x=>x.node===n)}else q=Recall.queue(all,{practise});
+  RS={q:q.map(x=>({...x})),k:0,shown:false,done:[],again:new Set(),all,from:document.activeElement,practise:practise||node!=null};
+  recallScrim.hidden=false;renderRecall();const f=recallBody.querySelector("[data-rc-show],.cta-s,button");f&&f.focus({preventScroll:true})}
+function closeRecall(){if(recallScrim.hidden)return;recallScrim.hidden=true;const f=RS&&RS.from;RS=null;renderRecallBtn();if(f&&f.focus&&document.contains(f))f.focus({preventScroll:true})}
+function gapHtml(x,shown){if(!x.cloze)return shown?esc(x.text):`<span class="rc-hidden">The key idea is hidden. Try to recall it, then check.</span>`;
+  return x.cloze.parts.map(p=>p.gap?(shown?`<mark>${esc(p.t)}</mark>`:`<span class="gap" aria-label="missing word, starts with ${esc(p.t[0])}">${esc(p.t[0])}<i>${"_".repeat(Math.max(3,Math.min(9,p.t.length-1)))}</i></span>`):esc(p.t)).join("")}
+function renderRecall(){if(!RS)return;const{q,k}=RS;
+  if(!q.length)return recallEmpty();
+  if(k>=q.length)return recallDone();
+  const x=q[k],n=x.node,href=n.link&&x.source&&x.source.link?safeHref(x.source.link.url):null,jump=href?safeHref(Learn.passageUrl(href,x.text)):null;
+  const ctx=x.source?`<span class="mono">From</span> ${esc(x.source.title)}${n.title?` <em>· ${esc(n.title)}</em>`:""}`:`<span class="mono">${esc(REGIONS[n.region].label)}</span> ${esc(n.title)}`;
+  recallBody.innerHTML=`<header class="rc-head"><h2 class="mono" id="recallTitle">Recall</h2><span class="mono">${k+1} of ${q.length}${RS.again.has(x.key)&&RS.done.some(d=>d.key===x.key)?" · again":""}</span></header>
+    <div class="rc-bar" aria-hidden="true"><i style="width:${Math.round(k/q.length*100)}%"></i></div>
+    <p class="rc-ctx">${ctx}</p>
+    <blockquote class="rc-q${RS.shown?" shown":""}">${gapHtml(x,RS.shown)}</blockquote>
+    ${RS.shown?`<div class="rc-acts"><button class="lbtn" data-rc-grade="0">Forgot <kbd class="mono">1</kbd></button><button class="cta-s" data-rc-grade="1">Remembered <kbd class="mono">2</kbd></button></div>
+      <p class="rc-links">${jump?`<a class="lbtn ext" href="${esc(jump)}" target="_blank" rel="noopener noreferrer">Read it in context ↗</a>`:""}<button class="lbtn" data-rc-open="${n.idx}">Open in the map</button></p>`
+    :`<p class="rc-hint">${x.cloze?"Say the missing word to yourself, then check.":""}</p><div class="rc-acts"><button class="cta-s" data-rc-show>Show answer <kbd class="mono">space</kbd></button></div>`}`}
+function recallEmpty(){const c=Recall.counts(RS.all);
+  recallBody.innerHTML=c.total?`<header class="rc-head"><h2 class="mono" id="recallTitle">Recall</h2></header><h3 class="rc-big">You’re all caught up.</h3>
+    <p class="rc-sub">${c.next!=null?`Next recall ${fmtDay(c.next)} · ${c.nextCount} ${c.nextCount===1?"idea":"ideas"}.`:""} Spacing it out is what makes it stick.</p>
+    <div class="rc-acts"><button class="lbtn" data-rc-close>Back to the map</button><button class="cta-s" data-rc-practise>Practise anyway</button></div>`
+  :`<header class="rc-head"><h2 class="mono" id="recallTitle">Recall</h2></header><h3 class="rc-big">Nothing to recall yet.</h3>
+    <p class="rc-sub">Add an article and its key ideas come back here, starting the next day, so you remember them.</p>
+    <div class="rc-acts"><button class="cta-s" data-rc-learn>＋ Add a link</button></div>`}
+function recallDone(){const first=RS.done.filter(d=>!d.retry),ok=first.filter(d=>d.ok).length,c=Recall.counts(Recall.items(viewNodes()));
+  recallBody.innerHTML=`<header class="rc-head"><h2 class="mono" id="recallTitle">Recall</h2><span class="mono">Done</span></header><div class="rc-bar" aria-hidden="true"><i style="width:100%"></i></div>
+    <h3 class="rc-big">${ok===first.length?"All remembered.":"Done for now."}</h3>
+    <p class="rc-sub">${first.length} recalled · ${ok} remembered first time.${first.length-ok?` The ones you missed come back tomorrow.`:""}${c.next!=null?` Next recall ${fmtDay(c.next)}.`:""}</p>
+    <div class="rc-acts"><button class="lbtn" data-rc-practise>Practise a few more</button><button class="cta-s" data-rc-close>Back to the map</button></div>`;
+  renderRecallBtn()}
+function gradeRecall(ok){if(!RS||!RS.shown)return;const x=RS.q[RS.k],n=x.node,retry=RS.done.some(d=>d.key===x.key);
+  if(!retry){n.review={...n.review,[x.key]:Recall.grade(n.review[x.key],ok)};saveMine(n)}
+  RS.done.push({key:x.key,ok,retry});
+  // missed: once more at the end of this session, so the right answer is the last one seen
+  if(!ok&&!RS.again.has(x.key)){RS.again.add(x.key);RS.q.push({...x})}
+  RS.k++;RS.shown=false;renderRecall();renderRecallBtn();
+  const f=recallBody.querySelector("[data-rc-show],.cta-s");f&&f.focus({preventScroll:true})}
+recallScrim.addEventListener("click",e=>{if(e.target===recallScrim||e.target.closest("#recallClose,[data-rc-close]"))return closeRecall();
+  if(e.target.closest("[data-rc-show]")){RS.shown=true;renderRecall();const f=recallBody.querySelector('[data-rc-grade="1"]');f&&f.focus({preventScroll:true});return}
+  const g=e.target.closest("[data-rc-grade]");if(g)return gradeRecall(g.dataset.rcGrade==="1");
+  if(e.target.closest("[data-rc-practise]"))return openRecall({practise:true});
+  if(e.target.closest("[data-rc-learn]")){closeRecall();return openLearn()}
+  const o=e.target.closest("[data-rc-open]");if(o){closeRecall();openNode(+o.dataset.rcOpen)}});
+document.addEventListener("keydown",e=>{if(recallScrim.hidden||!RS)return;if(e.target.closest&&e.target.closest("input,textarea"))return;
+  if(e.key==="Escape"){e.preventDefault();return closeRecall()}
+  // Space or Enter reveals, unless focus is on another control inside the card
+  if(!RS.shown&&(e.key===" "||e.key==="Enter")&&RS.k<RS.q.length&&!(recallScrim.contains(e.target)&&e.target.closest("a,button:not([data-rc-show])"))){e.preventDefault();RS.shown=true;renderRecall();return}
+  if(RS.shown&&(e.key==="1"||e.key==="2")){e.preventDefault();gradeRecall(e.key==="2")}});
+btnRecall.addEventListener("click",()=>openRecall());
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!libEl.hidden&&recallScrim.hidden&&!libEl.contains(e.target))closeLibrary()});
+// opening a node from a list: make sure filters and the time slider aren't hiding it
+function openNode(i){if(!G.neurons[i])return;if(!visible[i]){S.region="all";S.asOf=null;applyFilters();renderNav();renderTimeline()}
+  clearFocus();q.value="";hits=[];renderResults();select(i)}
+
+/* a nudge, once a day, when something is waiting */
+const nudgeEl=document.getElementById("nudge");let nudgeAt=0;
+function nudgeTick(now){
+  const today=String(Recall.dayOf(Date.now()));
+  if(!nudgeEl.hidden||!uiShown||!G||!G.neurons.length||tourK>=0||!(tourSeen||readS("toured"))||readS("nudged")===today||S.sel>=0||document.body.classList.contains("staged")||!scrim.hidden||!learnScrim.hidden||!recallScrim.hidden||!libEl.hidden){nudgeAt=0;return}
+  if(!nudgeAt){nudgeAt=now+5000;return}if(now<nudgeAt)return;nudgeAt=0;
+  const c=Recall.counts(Recall.items(viewNodes()));if(!c.waiting){store("nudged",today);return}
+  nudgeEl.innerHTML=`<p class="mono">Recall</p><h3>${c.waiting} ${c.waiting===1?"idea":"ideas"} to bring back</h3><p>About ${Math.max(1,Math.round(c.waiting*12/60))} ${Math.round(c.waiting*12/60)>1?"minutes":"minute"}. Remembering them now is what makes them stick.</p>
+    <div class="row"><button class="lbtn" data-nudge-later>Later</button><button class="cta-s" data-nudge-go>Start</button></div>`;nudgeEl.hidden=false}
+function hideNudge(seen){if(!nudgeEl.hidden||seen)store("nudged",String(Recall.dayOf(Date.now())));nudgeEl.hidden=true}
+nudgeEl.addEventListener("click",e=>{if(e.target.closest("[data-nudge-go]"))openRecall();else if(e.target.closest("[data-nudge-later]"))hideNudge(true)});
+
+/* LIBRARY — everything saved, as a list you can read, search and take with you */
+const libEl=document.getElementById("library"),btnLibrary=document.getElementById("btnLibrary");let libQ="",libF="all";
+function libraryData(){const ns=viewNodes().filter(n=>!n.synthetic),src=ns.filter(n=>n.link&&n.link.kind==="source");
+  const ideas=new Map(src.map(n=>[n.id,[]]));ns.forEach(n=>{if(n.link&&n.link.kind==="idea"&&ideas.has(n.link.source))ideas.get(n.link.source).push(n)});
+  const orphans=ns.filter(n=>n.link&&n.link.kind==="idea"&&!ideas.has(n.link.source)),topics=ns.filter(n=>!n.link).concat(orphans);
+  src.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));topics.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)||b.size-a.size);return{src,ideas,topics}}
+const hay=n=>[n.title,n.description,n.note,...n.learned,...n.skills,...(n.link?[n.link.site,...n.link.keywords]:[])].join(" ").toLowerCase();
+function renderLibrary(){if(!G)return;const{src,ideas,topics}=libraryData(),terms=libQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hit=n=>terms.every(w=>hay(n).includes(w)),noteOk=n=>libF!=="notes"||!!n.note;
+  const arts=libF==="topics"?[]:src.map(s=>{const kids=ideas.get(s.id);const own=hit(s);const ks=kids.filter(k=>(own||hit(k))&&(libF!=="notes"||k.note||s.note));
+      return(own||ks.length)&&(libF!=="notes"||s.note||ks.length)?{s,kids:own&&libF!=="notes"?kids:ks}:null}).filter(Boolean);
+  const tops=libF==="articles"?[]:topics.filter(n=>hit(n)&&noteOk(n));
+  const notes=viewNodes().filter(n=>n.note).length,nIdeas=[...ideas.values()].reduce((a,k)=>a+k.length,0);
+  const chip=(k,l)=>`<button data-lib-f="${k}" aria-pressed="${libF===k}">${l}</button>`;
+  const line=n=>{const r=Recall.itemsOf(n).length;return r?`<span class="rcm" title="In recall">↻</span>`:""};
+  libEl.innerHTML=`<header><h2 class="mono" id="libTitle">Library</h2><span class="mono">${src.length} ${src.length===1?"article":"articles"} · ${nIdeas} key ${nIdeas===1?"idea":"ideas"} · ${notes} ${notes===1?"note":"notes"}</span>
+      <button class="ibtn x" data-lib-close aria-label="Close library"><svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></header>
+    <label class="lib-search"><span class="sr">Search your library</span><input id="libQ" type="search" autocomplete="off" spellcheck="false" placeholder="Search titles, quotes and your notes" value="${esc(libQ)}"></label>
+    <div class="lib-chips" role="group" aria-label="Show">${chip("all","All")}${chip("articles","Articles")}${chip("topics","Topics")}${chip("notes","With notes")}</div>
+    <div class="lib-list" id="libList">
+      ${!src.length&&libF!=="topics"&&libF!=="notes"&&!terms.length?`<div class="lib-empty"><b>Nothing saved from the web yet.</b><span>Paste any article: it appears here with its key ideas, quoted, and they come back in Recall so you remember them.</span><button class="cta-s" data-lib-learn>＋ Add a link</button></div>`:""}
+      ${arts.length?`<h3 class="mono">Articles</h3>${arts.map(({s,kids})=>`<article class="lib-src"><button class="lib-t" data-open="${s.idx}">${esc(s.title)}</button>
+        <p class="mono meta">${[s.link.site,s.createdAt?"Added "+fmtDate(s.createdAt):"",kids.length?`${kids.length} key ${kids.length===1?"idea":"ideas"}`:""].filter(Boolean).map(esc).join(" · ")}</p>
+        ${s.note?`<p class="lib-note"><span class="mono">Your note</span>${esc(s.note)}</p>`:""}
+        <ol class="lib-ideas">${kids.map(k=>`<li><button data-open="${k.idx}"><b>${esc(k.title)}${line(k)}</b><span>“${esc(k.description)}”</span>${k.note?`<em><span class="mono">Your note</span> ${esc(k.note)}</em>`:""}</button></li>`).join("")}</ol></article>`).join("")}`:""}
+      ${tops.length?`<h3 class="mono">${APP.demo&&!localBrain()?"Topics in the demo":"Topics"}</h3><ul class="lib-tops">${tops.slice(0,300).map(n=>`<li><button data-open="${n.idx}"><span class="dot" style="--c:${REGIONS[n.region].color}"></span><span><b>${esc(n.title)}${line(n)}</b><span>${esc(short(n.description||n.learned[0]||"",120))}</span>${n.note?`<em><span class="mono">Your note</span> ${esc(short(n.note,160))}</em>`:""}</span></button></li>`).join("")}</ul>${tops.length>300?`<p class="lib-more mono">${tops.length-300} more · search to narrow</p>`:""}`:""}
+      ${!arts.length&&!tops.length&&(terms.length||libF!=="all")?`<p class="lib-none">${terms.length?`Nothing matches “${esc(libQ.trim())}”.`:libF==="notes"?"No notes yet. Open any node and add one: why it matters to you, or what you’ll do with it.":"Nothing here yet."}</p>`:""}
+    </div>
+    <footer><button class="lbtn" data-lib-md>${MODE==="app"?"Download as Markdown":"Copy as Markdown"}</button><span class="msg" id="libMsg" role="status" aria-live="polite"></span></footer>`}
+function openLibrary(){closeHelp();closeDrawer();hideNudge(false);if(tourK>=0)endTour();if(S.sel>=0)closePanel();renderLibrary();libEl.hidden=false;document.body.classList.add("lib-open");btnLibrary.setAttribute("aria-expanded","true");
+  setTimeout(()=>{const i=document.getElementById("libQ");i&&!COARSE&&i.focus({preventScroll:true})},60)}
+function closeLibrary(){if(libEl.hidden)return;libEl.hidden=true;document.body.classList.remove("lib-open");btnLibrary.setAttribute("aria-expanded","false")}
+btnLibrary.addEventListener("click",()=>libEl.hidden?openLibrary():closeLibrary());
+libEl.addEventListener("input",e=>{if(e.target.id!=="libQ")return;libQ=e.target.value;const pos=e.target.selectionStart;renderLibrary();const i=document.getElementById("libQ");i.focus();i.setSelectionRange(pos,pos)});
+libEl.addEventListener("click",e=>{if(e.target.closest("[data-lib-close]"))return closeLibrary();
+  const f=e.target.closest("[data-lib-f]");if(f){libF=f.dataset.libF;renderLibrary();const b=libEl.querySelector(`[data-lib-f="${libF}"]`);b&&b.focus();return}
+  if(e.target.closest("[data-lib-learn]")){closeLibrary();return openLearn()}
+  if(e.target.closest("[data-lib-md]"))return exportMarkdown();
+  const o=e.target.closest("[data-open]");if(o){closeLibrary();openNode(+o.dataset.open)}});
+libEl.addEventListener("keydown",e=>{if(e.key==="Escape"){e.stopPropagation();if(e.target.id==="libQ"&&libQ){libQ="";renderLibrary();document.getElementById("libQ").focus()}else{closeLibrary();btnLibrary.focus()}}});
+// Your reading as plain Markdown: titles, the exact quotes with links back to the passage, and your notes.
+function libraryMarkdown(){const{src,ideas,topics}=libraryData(),out=[`# ${MODE==="app"&&APP.brain?APP.brain.name:"My AI Brain"}`,"",`Exported ${fmtDate(Date.now())}. Key ideas are quoted exactly from each source.`,""];
+  const q=s=>s.replace(/\s+/g," ").trim(),note=(n,p="")=>n.note?[`${p}> **My note:** ${q(n.note)}`,""]:[];
+  if(src.length)out.push("## Articles","");
+  src.forEach(s=>{const href=safeHref(s.link.url);out.push(`### ${href?`[${q(s.title)}](${href})`:q(s.title)}`,"",[s.link.site,s.createdAt?"Added "+iso(s.createdAt):""].filter(Boolean).join(" · "),"",...note(s));
+    ideas.get(s.id).forEach(k=>{const j=href?safeHref(Learn.passageUrl(href,k.description)):null;out.push(`- **${q(k.title)}**: “${q(k.description)}”${j?` ([in context](${j}))`:""}`);if(k.note)out.push(`  - My note: ${q(k.note)}`)});out.push("")});
+  const mine=topics.filter(n=>n.note||n.learned.length);if(mine.length)out.push("## Topics","");
+  mine.forEach(n=>{out.push(`### ${q(n.title)}`,"");if(n.description)out.push(q(n.description),"");n.learned.forEach(l=>out.push(`- ${q(l)}`));if(n.learned.length)out.push("");out.push(...note(n))});
+  return out.join("\n").replace(/\n{3,}/g,"\n\n").trim()+"\n"}
+function exportMarkdown(){const md=libraryMarkdown(),m=document.getElementById("libMsg");
+  if(MODE==="app"){try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([md],{type:"text/markdown"}));a.download=`my-ai-brain-${iso(Date.now())}.md`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);m.className="msg";m.textContent="Downloaded."}catch(e){m.className="msg err";m.textContent="The download didn’t start. Try again."}return}
+  try{navigator.clipboard.writeText(md).then(()=>{m.className="msg";m.textContent="Copied. Paste it into any notes app."},()=>{m.className="msg err";m.textContent="Copying isn’t available here."})}catch(e){m.className="msg err";m.textContent="Copying isn’t available here."}}
+
 // The export email's manifest lists one-time links; the chats are in the "conversations" zips.
 function showManifest(files,ui){
   const convs=files.filter(f=>f.category==="conversations"&&f.url),many=convs.length>1;
@@ -1088,7 +1270,7 @@ function synthetic(N){const r=rng(99),neurons=[],ds=["design","ai","product","de
   const byR={};neurons.forEach((n,i)=>{const k=regionOf({type:n.type,domains:n.domains});(byR[k]=byR[k]||[]).push(i)});
   neurons.forEach((n,i)=>{const pool=byR[regionOf({type:n.type,domains:n.domains})];for(let k=0;k<2;k++){const j=r()<.85?pool[(r()*pool.length)|0]:(r()*N)|0;if(j!==i)n.connections.push("syn-"+j)}});return{neurons}}
 
-function setBanner(text,btn,fn){if(!text){banner.hidden=true;banner.innerHTML="";return}
+function setBanner(text,btn,fn){delete banner.dataset.k;if(!text){banner.hidden=true;banner.innerHTML="";return}
   banner.hidden=false;banner.innerHTML=`<span>${esc(text)}</span>${btn?`<button class="vbtn" id="bAct">${esc(btn)}</button>`:""}`;if(btn)document.getElementById("bAct").onclick=fn}
 function localBanner(){if(APP.mode==="guest")setBanner("This brain lives in this browser","Save it to an account",()=>openAuth());
   else setBanner("Showing imported data",`Back to ${SEED_NAME()}`,()=>{dropS("data");load(SEED);setBanner(null)})}
@@ -1097,6 +1279,7 @@ function localBanner(){if(APP.mode==="guest")setBanner("This brain lives in this
 // "continue" carries on from forming; anything else regrows the knowledge in place.
 function load(data,how="regrow"){
   try{G=normalize(data)}catch(e){G=normalize(SEED)}
+  if(!ownBrain())applyMine(G);
   if(S.sel>=0){S.sel=-1;panel.classList.remove("open");document.body.classList.remove("detail");ctxEl.hidden=true}
   S.hover=-1;S.focus=null;S.insight=-1;S.trail=[];S.region="all";S.asOf=null;sig.list=[];prop=null;fxParts=[];
   const empty=!G.neurons.length;emptyEl.hidden=!empty||APP.mode!=="local"||how==="forming";document.body.classList.toggle("is-empty",empty);
@@ -1104,7 +1287,7 @@ function load(data,how="regrow"){
   buildGPU();NB=NLAY[S.state]||new Float32Array(0);NA=NB;SCB={lines:SC.lines[S.state],pts:SC.pts[S.state]};SCA=SCB;MO.k=1;uploadMorph();computeCentroids();
   mote.line.fill(0);
   if(!empty)buildRegionLabels();else{Object.values(rlEls).forEach(e=>e.remove());rlEls={};nlEls.forEach(e=>{e.style.opacity=0;e.dataset.i=-1})}
-  applyFilters();renderNav();renderTimeline();renderDrawer();renderView();renderStates();closeDrawer();measureSafe();
+  applyFilters();renderNav();renderTimeline();renderDrawer();renderView();renderStates();closeDrawer();measureSafe();renderRecallBtn();if(!libEl.hidden)renderLibrary();
   const now=performance.now();
   if(how==="forming"){introCap=.42;introFrom=0;introStart=now;introRate=1/5200;introCam=!REDUCED;uiShown=false;if(!REDUCED)document.body.classList.add("intro");return}
   introCap=empty?.42:1;
@@ -1205,12 +1388,12 @@ function showWelcome(){const first=!readS("welcomed:"+APP.user.id);store("welcom
   const lb=localBrain(),ad=$("welcome").querySelector('[data-act="adopt"]');ad.hidden=!lb;if(lb)ad.querySelector("span").textContent=`${lb.neurons.length} neurons you built here before signing in`;
   $("welcome").querySelector('[data-act="demo"]').hidden=!first;stage("welcome")}
 $("welcome").addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
-  if(a==="close")stage(null);else if(a==="connect-claude")openConnect("claude");else if(a==="connect-chatgpt")openConnect("chatgpt");
+  if(a==="close")stage(null);else if(a==="learn"){stage(null);openLearn()}else if(a==="connect-claude")openConnect("claude");else if(a==="connect-chatgpt")openConnect("chatgpt");
   else if(a==="import"){stage(null);openImport()}else if(a==="demo")exploreDemo();else if(a==="adopt")adoptLocal()});
 function exploreDemo(){stage(null);closeAccount();APP.demo=true;load(SEED);setBanner("Exploring the demo brain","Back to my brain",backToOwn)}
 function backToOwn(){APP.demo=false;load({neurons:APP.base});setBanner(null);if(!APP.base.length)showWelcome()}
 // The anonymous brain built in this browser becomes the account's first knowledge.
-async function adoptLocal(){const lb=localBrain();if(!lb)return;stage(null);openImport();
+async function adoptLocal(){const lb=localBrain();if(!lb)return;stage(null);openImport();const mine=mineAll();lb.neurons.forEach(n=>{const m=mine[n.id];if(m){if(m.note)n.note=m.note;if(m.review)n.review=m.review}});
   await commitBrain({neurons:Importer.merge(APP.base,lb.neurons,{conv:CONV}).neurons},"import","Brought in the brain from this browser.",IMPORT_UI);
   if(APP.base.length)dropS("data")}
 

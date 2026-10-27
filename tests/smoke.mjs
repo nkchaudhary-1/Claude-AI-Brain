@@ -158,6 +158,47 @@ await scenario("learn-link", { width: 1440, height: 900 }, [
   async (p) => { await p.waitForSelector("#panel.open", { timeout: 8000 }); if (!/Designing Onboarding That Sticks/.test(await p.textContent("#pTitle"))) throw new Error("?learn= didn't map the article");
     if (/learn=/.test(await p.evaluate(() => location.search))) throw new Error("?learn= left in the address"); },
 ], { mock: withLearn(null), wait: 7000, hash: "?learn=" + encodeURIComponent(ARTICLE) });
+// Remember what you read: the daily nudge, a recall session, the library, and a note that survives a reload.
+await scenario("recall", { width: 1440, height: 900 }, [
+  async (p) => { if (await p.isVisible("#tour")) await p.click("[data-tour-skip]"); await p.waitForSelector("#nudge:not([hidden])", { timeout: 9000 });
+    if (!/to bring back/.test(await p.textContent("#nudge"))) throw new Error("nudge"); await p.click("[data-nudge-go]"); await visible(p, "#recallScrim");
+    if (!(await p.isVisible("#recallBody .gap"))) throw new Error("no hidden word on the first card"); },
+  async (p) => { await p.keyboard.press("Space"); const ans = await p.textContent("#recallBody mark"); if (!ans || ans.length < 5) throw new Error("answer: " + ans);
+    await p.keyboard.press("2"); await p.keyboard.press("Space"); await p.keyboard.press("1"); },
+  async (p) => { for (let i = 0; i < 12 && (await p.isVisible("[data-rc-show]")); i++) { await p.click("[data-rc-show]"); await p.click('[data-rc-grade="1"]'); }
+    const t = await p.textContent("#recallBody"); if (!/recalled · \d+ remembered first time/.test(t) || !/come back tomorrow/.test(t)) throw new Error("done screen: " + t.slice(0, 160));
+    const mine = JSON.parse(await p.evaluate(() => localStorage.getItem("aibrain:mine")) || "{}"); if (Object.values(mine).reduce((a, m) => a + Object.keys(m.review || {}).length, 0) < 5) throw new Error("progress not kept: " + JSON.stringify(mine).slice(0, 120));
+    await p.click("[data-rc-close]"); if (await p.isVisible("#recallBadge")) throw new Error("badge still showing after the session"); },
+  async (p) => { await p.click("#btnLibrary"); await visible(p, "#library"); if ((await p.$$(".lib-tops li")).length < 20) throw new Error("library topics");
+    const all = (await p.$$(".lib-tops li")).length; await p.fill("#libQ", "prompt"); const n = (await p.$$(".lib-tops li")).length;
+    if (n < 1 || n >= all) throw new Error(`search found ${n} of ${all}`); await p.click(".lib-tops button >> nth=0"); },
+  async (p) => { await p.waitForSelector("#panel.open"); if (await p.isVisible("#library")) throw new Error("library stayed open"); await p.click("[data-note-edit]");
+    await p.fill("#noteIn", "Explain this to the team before the offsite."); await p.keyboard.press("Control+Enter"); await p.waitForTimeout(300);
+    if (!/Explain this to the team/.test(await p.textContent("#pBody .sec.mine"))) throw new Error("note not shown"); await p.click("#back"); },
+  async (p) => { await p.fill("#q", "offsite"); await p.waitForTimeout(300); if (!/Your note/.test(await p.textContent("#results"))) throw new Error("search doesn't reach notes"); await p.reload(); await p.waitForTimeout(6500);
+    await p.click("#btnLibrary"); await p.click('[data-lib-f="notes"]'); if (!/Explain this to the team/.test(await p.textContent("#library"))) throw new Error("note lost on reload"); },
+], { wait: 6000 });
+// Signed in: recall progress and notes are saved to the account as they happen (PATCH /api/brain/nodes),
+// articles fill the library, and it downloads as Markdown with links back to each passage.
+const LEARNED = Learn.toNeurons(DIGEST, nodes, { now: Date.now() - 3 * 864e5 }).neurons;
+const patches = [];
+const learnedPayload = { ...payload(true), nodes: [...nodes, ...LEARNED.map(({ connections, ...n }) => n)],
+  connections: [...edges, ...LEARNED.flatMap((n) => n.connections.map((c) => ({ source: n.id, target: c, strength: .6, type: "related" })))] };
+const withPatch = (base) => (path, req) => (path === "/api/brain/nodes" ? (patches.push(JSON.parse(req.postData() || "{}")), { body: { updated: 1 } }) : base(path, req));
+await scenario("recall-app", { width: 1440, height: 900 }, [
+  async (p) => { if (await p.isVisible("#tour")) await p.click("[data-tour-skip]"); await p.click("#btnRecall"); await visible(p, "#recallScrim");
+    if (!/From Designing Onboarding That Sticks/.test(await p.textContent(".rc-ctx"))) throw new Error("new reading should come first");
+    await p.keyboard.press("Space"); await p.keyboard.press("2"); await p.waitForTimeout(1400);
+    const sent = patches.flatMap((b) => b.nodes); if (!sent.some((n) => LEARNED.some((l) => l.id === n.id) && n.review && Object.keys(n.review).length)) throw new Error("recall progress not saved: " + JSON.stringify(patches));
+    await p.keyboard.press("Escape"); },
+  async (p) => { await p.click("#btnLibrary"); await p.click('[data-lib-f="articles"]'); const t = await p.textContent("#library");
+    if (!/Designing Onboarding That Sticks/.test(t) || !/4 key ideas/.test(t)) throw new Error("library articles: " + t.slice(0, 200));
+    const [dl] = await Promise.all([p.waitForEvent("download"), p.click("[data-lib-md]")]); const md = readFileSync(await dl.path(), "utf8");
+    if (!md.includes("[Designing Onboarding That Sticks](" + ARTICLE + ")") || !md.includes(ARTICLE + "#:~:text=") || !md.includes(DIGEST.ideas[0].quote)) throw new Error("markdown: " + md.slice(0, 300));
+    await p.click(".lib-ideas button >> nth=0"); },
+  async (p) => { await p.waitForSelector("#panel.open"); await p.click("[data-note-edit]"); await p.fill("#noteIn", "Use for the signup flow."); await p.click("[data-note-save]"); await p.waitForTimeout(1400);
+    if (!patches.some((b) => b.nodes.some((n) => n.note === "Use for the signup flow."))) throw new Error("note not saved to the account"); },
+], { mock: withPatch(api(user, { body: learnedPayload })), wait: 8000 });
 await scenario("app-landing", { width: 1440, height: 900 }, [
   async (p) => { await visible(p, "#landing"); await p.click("#landingBuild"); await visible(p, "#auth"); },
   async (p) => { await p.click("#authEmailBtn"); await p.fill("#authEmailIn", "ada@example.com"); await p.press("#authEmailIn", "Enter"); await p.waitForTimeout(400);

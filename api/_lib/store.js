@@ -116,3 +116,22 @@ export async function deleteData(sb, brainId) {
 export async function deleteBrain(sb, brainId) {
   await sb.from("brains").delete().eq("id", brainId).throwOnError();   // everything cascades; the next visit starts a fresh one
 }
+
+// The person's own fields on existing nodes (their note, recall progress). Only these keys change; the rest of
+// the node stays as imported. RLS limits every select and update to the caller's own brain.
+export async function patchNodes(sb, brainId, patches) {
+  let updated = 0;
+  for (const part of chunks(patches, 100)) {
+    const { data, error } = await sb.from("knowledge_nodes").select("id,node_key,metadata").eq("brain_id", brainId).in("node_key", part.map((p) => p.key));
+    if (error) throw error;
+    const rows = new Map(data.map((r) => [r.node_key, r]));
+    for (const p of part) {
+      const r = rows.get(p.key); if (!r) continue;
+      const metadata = { ...(r.metadata || {}) };
+      for (const f of ["note", "review"]) if (f in p.set) { if (p.set[f] == null) delete metadata[f]; else metadata[f] = p.set[f]; }
+      await sb.from("knowledge_nodes").update({ metadata }).eq("id", r.id).eq("brain_id", brainId).throwOnError();
+      updated++;
+    }
+  }
+  return updated;
+}

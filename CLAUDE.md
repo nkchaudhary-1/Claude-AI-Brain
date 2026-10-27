@@ -19,6 +19,7 @@ npm run test:rls     # row level security against the real migration
 npm run test:integration  # Docker: supabase/postgres + postgrest + GoTrue stand-in, full API end to end
 npm run test:importer  # importer unit tests only (no browser, no network)
 npm run test:learn   # learn-from-a-link: extraction, key ideas, linking, URL guards, endpoint refusals
+npm run test:recall  # recall cards, hidden-word choice, schedule, daily limits, note/review validation and patching
 npm run test:dist    # build, then test the bundled file
 ```
 
@@ -36,7 +37,9 @@ src/data/seed.js    CONV (conversation table), SEED (neurons), EDGES (connection
 src/data/demo.js    DEMO: general-knowledge brain (concepts, no people/chats) for the hosted landing, guest and demo
 src/learn/core.js   Learn: page HTML or pasted text → readable blocks → key ideas (exact sentences) → nodes linked into a brain.
                     Pure JS, shared by the page, /api/learn and tests; no AI
-src/cloud.js        Cloud: fetch wrappers for /api + toVisual() (Brain model → renderer) + changedNeurons() + sync()
+src/recall/core.js  Recall: cards from saved sentences (idea quotes, learned lines), the hidden word, the spaced schedule,
+                    today's queue and counts. Pure JS, shared by the page, api/_lib/model.js and tests; no AI
+src/cloud.js        Cloud: fetch wrappers for /api + toVisual() (Brain model → renderer) + changedNeurons() + sync() + patchNodes()
 src/importer/core.js  Importer: parse export → vocabulary vectors → clusters → neurons → merge. Pure JS,
                     shared by the page and the CLI; one top-level name because the build concatenates
 src/main.js         everything else, in this order:
@@ -49,11 +52,15 @@ src/main.js         everything else, in this order:
   FX OVERLAY        2D canvas: readout leader lines, reticles, panel thread, collapse particles, engine + layer marks
   INTERACTION       pick(), hover, select() = entering a memory, openPanel()/closePanel(), travel() between neurons
   search wave / filters / states / time slider / view / zoom / metadata readouts / insights
-  IMPORT / EMPTY / STRESS importExport(), commitBrain() (account sync or localStorage), load(data, how)
+  IMPORT / LEARN    readFiles(), the learn sheet, addLearned()
+  YOURS / RECALL / LIBRARY  saveMine() (account PATCH or the localStorage overlay), the note in the panel, recall
+                    session + daily nudge, the library list + Markdown export
+  EMPTY / STRESS    importExport(), commitBrain() (account sync or localStorage), load(data, how)
   APP               bootApp() → loading steps → landing (guest) | openBrain() (user) → welcome / empty / error stages,
                     auth card, connect card, account sheet. bootLocal() for local mode.
 api/                Vercel functions; api/_lib is shared (never routed). See README → Architecture.
                     api/learn.js + api/_lib/fetchpage.js: the free link reader (SSRF-safe fetch → Learn)
+                    api/brain/nodes.js: PATCH a node's note / recall progress only (store.patchNodes)
 supabase/           migrations (schema + RLS + signup trigger), config.toml, magic-link template
 scripts/serve.mjs   dev/start server: static + /api handlers, .env.local, vercel.json headers in --dist
 scripts/build.mjs   dist/ (demo brain; fails if any personal seed text leaks) + dist-artifact/artifact.html (personal seed)
@@ -62,7 +69,8 @@ scripts/importer/llm.mjs  the Claude pass (@anthropic-ai/sdk, dev dependency, lo
 tests/importer.mjs  importer unit tests (grouping, privacy, merge, idempotency, Claude-pass validation, 3k perf)
 tests/rls.mjs       RLS: a second user and anon try to read/write/link into someone else's brain
 tests/integration.mjs  real API end to end (auth cookies, PKCE, refresh, import, isolation, deletion)
-tests/smoke.mjs     11 scenarios: local flows + hosted-app landing/auth/welcome/account/error with /api mocked
+tests/recall.mjs    recall cards, schedule, daily limits, server cleaning and patch merging (no browser)
+tests/smoke.mjs     19 scenarios: local flows, learn, recall/library/notes (local and signed in), hosted-app landing/auth/welcome/account/error with /api mocked
 tests/fixtures/claude-export.mjs  synthetic export in the real conversations.json shape (tests only)
 ```
 
@@ -91,7 +99,8 @@ A neuron is authored in `src/data/seed.js` or imported as `brain.json` (schema i
 { id, title, domains:["design","ai",...], type, status, visibility:"public"|"private", weight:1-5,
   createdAt?, updatedAt?, description, learned:[], created:[], insights:[], skills:[],
   conversations:[{id?,title,date,summary}] | conv:["key into CONV"], connections:[id | {id, why}], source?:"import",
-  linkWhy?:{otherId: why}, link?:{kind:"source"|"idea", url, site, keywords, published?, readMinutes?, quote?, section?, source?} }
+  linkWhy?:{otherId: why}, link?:{kind:"source"|"idea", url, site, keywords, published?, readMinutes?, quote?, section?, source?},
+  note?:"the person's own words", review?:{itemKey:[step, dueDay, reps, firstDay]} }
 ```
 
 - `type`: foundation | skill | project | experiment | research | idea. This sets the layer, meaning depth inside the lobe.
@@ -101,6 +110,7 @@ A neuron is authored in `src/data/seed.js` or imported as `brain.json` (schema i
 - `density` scales brightness and size down past 250 neurons so large brains don't blow out.
 - A connection may carry its reason: `{id, why}` (the demo brain writes one for every link). Otherwise `linkWhy()` computes it from what the two share, in order: a conversation, a skill, distinctive words (rare across the brain), an area; else "Similar topics in your chats" (imports) or "Linked by hand". Never guessed.
 - `source:"import"` marks neurons the importer created; conversation `id` is the claude.ai uuid. Both drive re-import merging.
+- `note` and `review` are the person's own. They survive merges and re-pasting the same link. `review` keys are a hash of the recalled sentence; days are local calendar days since the epoch.
 
 ## Learn from a link (v0.6, free)
 
@@ -113,6 +123,15 @@ The answer to "what is this for?": paste anything you read, and its key ideas jo
 - **The claude.ai preview can't reach the web.** In local mode a link is handed to the hosted app (`/?learn=`) when the build knows its address: `BRAIN_APP_URL=https://… npm run build` writes `<meta name="brain-app">` into the artifact only.
 - **Dig in:** the panel shows "Read the original ↗", the key ideas, topics, and for an idea its quote plus "Jump to this passage ↗" (URL text fragments, `Learn.passageUrl`).
 - Can't read: paywalls/logins, pages that render their text with JavaScript, PDFs. Each says so in plain words and offers paste-the-text.
+
+## Remember what you read (v0.7, free)
+
+Testers said the map was beautiful but not useful: saving an article and seeing it light up isn't a job anyone has. The jobs are *find it again*, *still know it next month*, and *think with it*. v0.7 answers those without AI or running cost; the map stays the overview.
+- **Recall** (`Recall` in `src/recall/core.js`, UI in main.js): a card per saved sentence (an idea's quote, or a `learned` line), with one distinctive word hidden (`cloze()`: long, rare in the brain, an article keyword, not filler or a participle, never a word the card's title gives away; otherwise the card hides the whole sentence). Remembered → 1, 3, 7, 16, 35, 90 days; forgot → tomorrow, and once more at the end of the session (not re-graded). Due cards first, then up to 5 new a day, newest reading first; anything added today starts tomorrow. "Practise anyway" when nothing is due. Keys: Space shows, 1 forgot, 2 remembered.
+- **Nudge:** once a day, 5 s after the map settles (never during the tour, a stage, a sheet or an open node), when cards are waiting.
+- **Library** (`#library`): articles with their ideas, topics, notes; search over titles, quotes, keywords, notes; filters; Markdown download (hosted) or copy (artifact), with passage links. Opening an item clears filters that would hide it (`openNode`).
+- **Your note** in the panel, shown apart from the quote (amber, "Your note"). Search finds it ("Your note · …").
+- **Where it's saved:** signed in → `PATCH /api/brain/nodes` (debounced 700 ms, retried, `keepalive` on page hide) into `metadata.note` / `metadata.review`, validated by `cleanMine()`; nothing else on a node can change there. Otherwise → `localStorage["aibrain:mine"]`, an overlay keyed by node id applied in `load()`, so it works on the seed, the demo and imported brains, and is carried into an account by "Keep this browser's brain".
 
 ## Importer
 
@@ -131,6 +150,7 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input comes 
 - **Client confidentiality.** The Gold Investment app is client work. It and anything derived from it (SIP autonomy dial, the component library) stay `visibility:"private"`. Public view must never show them.
 - **Private first.** The Private view is the default. Public is a curated subset. Anything imported without an explicit visibility is stored private.
 - **The hosted site never contains personal seed data, public or private.** It uses `src/data/demo.js` (general knowledge). `scripts/build.mjs` fails if any seed title, description, list item or conversation text reaches the bundle, and strips `<p class="local-only">` notes from the public page. A visitor’s import on the hosted site starts from their own data, never the demo (`importBase()`).
+- **Recall never rewrites either.** A card is the saved sentence with one word hidden. Notes are the person's words and are always shown as theirs, never mixed into a quote.
 - **Learned knowledge is quoted, never paraphrased.** Key ideas are exact sentences from the source; titles come from its headings or its own words. Don't add rewriting without an explicit AI decision (it would cost money and could invent).
 - **Honest providers.** Don't add fake "connect" or "sync" for Claude/ChatGPT. Export → import until an official mechanism exists.
 - Conversation titles in the seed are descriptive labels, not real chat titles. Replace them when the export is imported.
@@ -162,6 +182,7 @@ Conversations → Topics → Knowledge → Neurons → Connections. Input comes 
 | 21 | Hosted demo = a general-knowledge brain, not the public part of the personal seed | The remaining public nodes were still Neelesh’s real projects; a concept brain is useful to read and personal to no one | Public view launches on neelesh.one |
 | 22 | Explain links in the panel + a `?` legend + a skippable 3-step guide, not a permanent overlay | Comprehension without cluttering the brain; the reason sits where the curiosity is (an open node) | Hovering a line directly, or Claude-written reasons from the import pass |
 | 23 | v0.6: "paste a link" as the core loop, free (extractive, no AI) | People didn't see what the brain was for; reading is daily, exports are rare. The user wanted zero running cost, and quoting keeps "never invent data" | People ask for plain-language rewrites or Q&A, and a budget exists |
+| 24 | v0.7: Recall (spaced, hidden-word cards), Library and notes; the map becomes the overview | "Not useful": the value of saving reading is remembering and finding it. Spaced recall over exact quotes is proven, free and invents nothing | People want questions answered from their reading (needs AI and a budget) |
 | 16 | Emerging layer = exploring / experimenting / in-progress and updated in the last 30 days | Honest, data-derived stand-in for "emerging intelligence" | The Claude insight pass lands |
 
 ### Making the map understandable
@@ -182,6 +203,9 @@ User-facing copy says **node**, matching the "Knowledge nodes" metric.
 **Next**
 - Run the importer on the real export, then tune `--threshold` and the keyword rules against it.
 - Curation UI in the detail panel (visibility, title, weight) so the curated fields that survive a merge can be set without editing JSON.
+- Watch real use of Recall: cards answered per day, return visits, which hidden words feel wrong. Tune `cloze()` and the daily limit from that.
+- Save a highlighted passage (the bookmark button sends the selection as the idea) and a phone share target (Android web share target).
+- Share one article or topic as a public read-only page (private stays the default).
 
 **Later**
 - Move offline grouping to a Web Worker past ~5k conversations (it's ~2s on the main thread at 3k today).

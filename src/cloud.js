@@ -30,7 +30,7 @@ export const Cloud = (() => {
 
   // Only what changed goes up: a stable signature per neuron decides.
   const sig = (n) => JSON.stringify([n.title, n.domains, n.type, n.status, n.visibility, n.weight, n.description, n.learned, n.created, n.insights, n.skills,
-    (n.conversations || []).map((c) => [c.id, c.title, c.date, c.summary]), [...(n.connections || [])].sort()]);
+    (n.conversations || []).map((c) => [c.id, c.title, c.date, c.summary]), [...(n.connections || [])].sort(), n.link || null, n.note || "", n.review || {}]);
   function changedNeurons(base, next) {
     const adj = new Map();const link = (a, b) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a).add(b); };
     next.forEach((n) => (n.connections || []).forEach((k) => { link(n.id, k); link(k, n.id); }));
@@ -70,6 +70,8 @@ export const Cloud = (() => {
     session: () => call("/api/session"),
     brain: () => call("/api/brain"),
     rename: (name) => call("/api/brain", { method: "PATCH", body: { name } }),
+    // the person's note and recall progress on existing nodes: [{ id, note?, review? }]
+    patchNodes: (nodes) => call("/api/brain/nodes", { method: "PATCH", body: { nodes } }),
     deleteBrain: () => call("/api/brain", { method: "DELETE" }),
     deleteData: () => call("/api/brain/data", { method: "DELETE" }),
     sources: () => call("/api/sources"),
