@@ -5,8 +5,8 @@ import { Recall } from "../src/recall/core.js";
 import { Learn } from "../src/learn/core.js";
 import { Cloud } from "../src/cloud.js";
 import { DEMO } from "../src/data/demo.js";
-import { cleanNode, toClientNode } from "../api/_lib/model.js";
-import nodesHandler, { cleanPatches } from "../api/brain/nodes.js";
+import { cleanNode, toClientNode, cleanPatches } from "../api/_lib/model.js";
+import brainHandler from "../api/brain/index.js";
 import { patchNodes } from "../api/_lib/store.js";
 
 let failures = 0;
@@ -120,7 +120,7 @@ await test("a changed note or recall state counts as a change to sync", () => {
 await test("the patch endpoint needs the same-site header", async () => {
   const call = (headers) => new Promise((resolve) => {
     const res = { statusCode: 0, headers: {}, setHeader(k, v) { this.headers[k] = v; }, end(b) { resolve({ status: this.statusCode, body: b ? JSON.parse(b) : null }); } };
-    nodesHandler({ method: "PATCH", headers: { host: "localhost", ...headers }, body: { nodes: [{ id: "a", note: "x" }] }, socket: { remoteAddress: "t" } }, res);
+    brainHandler({ method: "PATCH", headers: { host: "localhost", ...headers }, body: { nodes: [{ id: "a", note: "x" }] }, socket: { remoteAddress: "t" } }, res);
   });
   assert.equal((await call({})).status, 403);
   // without Supabase configured: 503; with it but no session: 401. Never a crash, never a write.

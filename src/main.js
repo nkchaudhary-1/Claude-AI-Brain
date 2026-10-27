@@ -1079,7 +1079,7 @@ async function flushMine(){if(!pendingMine.size||!ownBrain())return;const nodes=
     if(++mineTries<3){clearTimeout(mineTimer);mineTimer=setTimeout(flushMine,2500*mineTries);return}
     setBanner("Your latest notes and recall progress aren’t saved yet","Try again",()=>{mineTries=0;flushMine()});banner.dataset.k="mine"}}
 // leaving the page mid-save: send what's left without waiting for an answer
-addEventListener("pagehide",()=>{if(!pendingMine.size||!ownBrain())return;try{fetch("/api/brain/nodes",{method:"PATCH",keepalive:true,credentials:"same-origin",
+addEventListener("pagehide",()=>{if(!pendingMine.size||!ownBrain())return;try{fetch("/api/brain",{method:"PATCH",keepalive:true,credentials:"same-origin",
   headers:{"content-type":"application/json","x-brain-request":"1"},body:JSON.stringify({nodes:[...pendingMine.values()].slice(0,50)})})}catch(e){}});
 
 /* your note, in the panel: your words next to the quote, never mixed into it */
@@ -1209,7 +1209,7 @@ function renderLibrary(){if(!G)return;const{src,ideas,topics}=libraryData(),term
       ${tops.length?`<h3 class="mono">${APP.demo&&!localBrain()?"Topics in the demo":"Topics"}</h3><ul class="lib-tops">${tops.slice(0,300).map(n=>`<li><button data-open="${n.idx}"><span class="dot" style="--c:${REGIONS[n.region].color}"></span><span><b>${esc(n.title)}${line(n)}</b><span>${esc(short(n.description||n.learned[0]||"",120))}</span>${n.note?`<em><span class="mono">Your note</span> ${esc(short(n.note,160))}</em>`:""}</span></button></li>`).join("")}</ul>${tops.length>300?`<p class="lib-more mono">${tops.length-300} more · search to narrow</p>`:""}`:""}
       ${!arts.length&&!tops.length&&(terms.length||libF!=="all")?`<p class="lib-none">${terms.length?`Nothing matches “${esc(libQ.trim())}”.`:libF==="notes"?"No notes yet. Open any node and add one: why it matters to you, or what you’ll do with it.":"Nothing here yet."}</p>`:""}
     </div>
-    <footer><button class="lbtn" data-lib-md>${MODE==="app"?"Download as Markdown":"Copy as Markdown"}</button><span class="msg" id="libMsg" role="status" aria-live="polite"></span></footer>`}
+    <footer><button class="lbtn" data-lib-md>Download as Markdown</button><span class="msg" id="libMsg" role="status" aria-live="polite"></span></footer>`}
 function openLibrary(){closeHelp();closeDrawer();hideNudge(false);if(tourK>=0)endTour();if(S.sel>=0)closePanel();renderLibrary();libEl.hidden=false;document.body.classList.add("lib-open");btnLibrary.setAttribute("aria-expanded","true");
   setTimeout(()=>{const i=document.getElementById("libQ");i&&!COARSE&&i.focus({preventScroll:true})},60)}
 function closeLibrary(){if(libEl.hidden)return;libEl.hidden=true;document.body.classList.remove("lib-open");btnLibrary.setAttribute("aria-expanded","false")}
@@ -1230,9 +1230,16 @@ function libraryMarkdown(){const{src,ideas,topics}=libraryData(),out=[`# ${MODE=
   const mine=topics.filter(n=>n.note||n.learned.length);if(mine.length)out.push("## Topics","");
   mine.forEach(n=>{out.push(`### ${q(n.title)}`,"");if(n.description)out.push(q(n.description),"");n.learned.forEach(l=>out.push(`- ${q(l)}`));if(n.learned.length)out.push("");out.push(...note(n))});
   return out.join("\n").replace(/\n{3,}/g,"\n\n").trim()+"\n"}
-function exportMarkdown(){const md=libraryMarkdown(),m=document.getElementById("libMsg");
-  if(MODE==="app"){try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([md],{type:"text/markdown"}));a.download=`my-ai-brain-${iso(Date.now())}.md`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);m.className="msg";m.textContent="Downloaded."}catch(e){m.className="msg err";m.textContent="The download didn’t start. Try again."}return}
-  try{navigator.clipboard.writeText(md).then(()=>{m.className="msg";m.textContent="Copied. Paste it into any notes app."},()=>{m.className="msg err";m.textContent="Copying isn’t available here."})}catch(e){m.className="msg err";m.textContent="Copying isn’t available here."}}
+// The hosted app downloads directly. The claude.ai artifact can only hand a file over through its downloads
+// capability (the viewer confirms); without it, the Markdown is copied, or shown selected to copy by hand.
+let dlCap;
+const artifactDownloads=()=>dlCap||(dlCap=window.claude&&typeof window.claude.use==="function"?Promise.resolve(window.claude.use("downloads")).catch(()=>null):Promise.resolve(null));
+async function exportMarkdown(){const md=libraryMarkdown(),m=document.getElementById("libMsg"),name=`my-ai-brain-${iso(Date.now())}.md`,say=(t,err)=>{m.className=err?"msg err":"msg";m.textContent=t};
+  if(MODE==="app"){try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([md],{type:"text/markdown"}));a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);say("Downloaded.")}catch(e){say("The download didn’t start. Try again.",true)}return}
+  const d=await artifactDownloads();
+  if(d)try{await d.save({filename:name,data:md});return say("Saved.")}catch(e){if(e&&e.code==="declined")return say("Not saved.");if(e&&e.code==="rate_limited")return say("A save is already waiting for you to confirm.",true)}
+  const shown=()=>{const ta=document.createElement("textarea");ta.className="copy";ta.readOnly=true;ta.value=md;ta.setAttribute("aria-label","Your library as Markdown");m.replaceChildren(ta);ta.focus();ta.select()};
+  try{await navigator.clipboard.writeText(md);say("Copied as Markdown. Paste it into any notes app.")}catch(e){shown()}}
 
 // The export email's manifest lists one-time links; the chats are in the "conversations" zips.
 function showManifest(files,ui){

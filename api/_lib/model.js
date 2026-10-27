@@ -91,6 +91,23 @@ export function cleanMine(raw) {
   if (raw && raw.review) { const review = Recall.cleanReview(raw.review); if (Object.keys(review).length) out.review = review; }
   return out;
 }
+// PATCH /api/brain { nodes: [{ id, note?, review? }] } → [{ key, set }]. Only these two fields; "" or null removes.
+export function cleanPatches(body) {
+  const raw = body && Array.isArray(body.nodes) ? body.nodes : null;
+  if (!raw || !raw.length) throw Object.assign(new Error("no nodes"), { status: 400 });
+  if (raw.length > LIMITS.patchNodes) throw Object.assign(new Error("too many nodes"), { status: 413 });
+  const out = [];
+  for (const n of raw) {
+    const key = n && typeof n === "object" && cleanKey(n.id);
+    if (!key || !("note" in n || "review" in n)) continue;
+    const mine = cleanMine(n), set = {};
+    if ("note" in n) set.note = mine.note ?? null;
+    if ("review" in n) set.review = mine.review ?? null;
+    out.push({ key, set });
+  }
+  if (!out.length) throw Object.assign(new Error("nothing to change"), { status: 400 });
+  return out;
+}
 // Why this node links to others: { otherKey: "Both about habit" }.
 function cleanWhy(w, key) {
   if (!w || typeof w !== "object") return {};

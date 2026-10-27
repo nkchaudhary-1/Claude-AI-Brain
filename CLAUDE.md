@@ -60,7 +60,8 @@ src/main.js         everything else, in this order:
                     auth card, connect card, account sheet. bootLocal() for local mode.
 api/                Vercel functions; api/_lib is shared (never routed). See README → Architecture.
                     api/learn.js + api/_lib/fetchpage.js: the free link reader (SSRF-safe fetch → Learn)
-                    api/brain/nodes.js: PATCH a node's note / recall progress only (store.patchNodes)
+                    api/brain/index.js PATCH { nodes }: a node's note / recall progress only (store.patchNodes).
+                    Vercel's free plan allows 12 functions and there are 12: extend an existing one, don't add a file
 supabase/           migrations (schema + RLS + signup trigger), config.toml, magic-link template
 scripts/serve.mjs   dev/start server: static + /api handlers, .env.local, vercel.json headers in --dist
 scripts/build.mjs   dist/ (demo brain; fails if any personal seed text leaks) + dist-artifact/artifact.html (personal seed)
@@ -129,9 +130,9 @@ The answer to "what is this for?": paste anything you read, and its key ideas jo
 Testers said the map was beautiful but not useful: saving an article and seeing it light up isn't a job anyone has. The jobs are *find it again*, *still know it next month*, and *think with it*. v0.7 answers those without AI or running cost; the map stays the overview.
 - **Recall** (`Recall` in `src/recall/core.js`, UI in main.js): a card per saved sentence (an idea's quote, or a `learned` line), with one distinctive word hidden (`cloze()`: long, rare in the brain, an article keyword, not filler or a participle, never a word the card's title gives away; otherwise the card hides the whole sentence). Remembered → 1, 3, 7, 16, 35, 90 days; forgot → tomorrow, and once more at the end of the session (not re-graded). Due cards first, then up to 5 new a day, newest reading first; anything added today starts tomorrow. "Practise anyway" when nothing is due. Keys: Space shows, 1 forgot, 2 remembered.
 - **Nudge:** once a day, 5 s after the map settles (never during the tour, a stage, a sheet or an open node), when cards are waiting.
-- **Library** (`#library`): articles with their ideas, topics, notes; search over titles, quotes, keywords, notes; filters; Markdown download (hosted) or copy (artifact), with passage links. Opening an item clears filters that would hide it (`openNode`).
+- **Library** (`#library`): articles with their ideas, topics, notes; search over titles, quotes, keywords, notes; filters; Markdown download with passage links (hosted: a plain download; the artifact: its `downloads` capability, published with `capabilities:{downloads:true}`, else clipboard, else a selected textarea). Opening an item clears filters that would hide it (`openNode`).
 - **Your note** in the panel, shown apart from the quote (amber, "Your note"). Search finds it ("Your note · …").
-- **Where it's saved:** signed in → `PATCH /api/brain/nodes` (debounced 700 ms, retried, `keepalive` on page hide) into `metadata.note` / `metadata.review`, validated by `cleanMine()`; nothing else on a node can change there. Otherwise → `localStorage["aibrain:mine"]`, an overlay keyed by node id applied in `load()`, so it works on the seed, the demo and imported brains, and is carried into an account by "Keep this browser's brain".
+- **Where it's saved:** signed in → `PATCH /api/brain { nodes }` (debounced 700 ms, retried, `keepalive` on page hide) into `metadata.note` / `metadata.review`, validated by `cleanMine()`; nothing else on a node can change there. Otherwise → `localStorage["aibrain:mine"]`, an overlay keyed by node id applied in `load()`, so it works on the seed, the demo and imported brains, and is carried into an account by "Keep this browser's brain".
 
 ## Importer
 

@@ -178,13 +178,13 @@ await scenario("recall", { width: 1440, height: 900 }, [
   async (p) => { await p.fill("#q", "offsite"); await p.waitForTimeout(300); if (!/Your note/.test(await p.textContent("#results"))) throw new Error("search doesn't reach notes"); await p.reload(); await p.waitForTimeout(6500);
     await p.click("#btnLibrary"); await p.click('[data-lib-f="notes"]'); if (!/Explain this to the team/.test(await p.textContent("#library"))) throw new Error("note lost on reload"); },
 ], { wait: 6000 });
-// Signed in: recall progress and notes are saved to the account as they happen (PATCH /api/brain/nodes),
+// Signed in: recall progress and notes are saved to the account as they happen (PATCH /api/brain { nodes }),
 // articles fill the library, and it downloads as Markdown with links back to each passage.
 const LEARNED = Learn.toNeurons(DIGEST, nodes, { now: Date.now() - 3 * 864e5 }).neurons;
 const patches = [];
 const learnedPayload = { ...payload(true), nodes: [...nodes, ...LEARNED.map(({ connections, ...n }) => n)],
   connections: [...edges, ...LEARNED.flatMap((n) => n.connections.map((c) => ({ source: n.id, target: c, strength: .6, type: "related" })))] };
-const withPatch = (base) => (path, req) => (path === "/api/brain/nodes" ? (patches.push(JSON.parse(req.postData() || "{}")), { body: { updated: 1 } }) : base(path, req));
+const withPatch = (base) => (path, req) => (path === "/api/brain" && req.method() === "PATCH" ? (patches.push(JSON.parse(req.postData() || "{}")), { body: { updated: 1 } }) : base(path, req));
 await scenario("recall-app", { width: 1440, height: 900 }, [
   async (p) => { if (await p.isVisible("#tour")) await p.click("[data-tour-skip]"); await p.click("#btnRecall"); await visible(p, "#recallScrim");
     if (!/From Designing Onboarding That Sticks/.test(await p.textContent(".rc-ctx"))) throw new Error("new reading should come first");

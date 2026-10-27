@@ -71,7 +71,7 @@ export const Cloud = (() => {
     brain: () => call("/api/brain"),
     rename: (name) => call("/api/brain", { method: "PATCH", body: { name } }),
     // the person's note and recall progress on existing nodes: [{ id, note?, review? }]
-    patchNodes: (nodes) => call("/api/brain/nodes", { method: "PATCH", body: { nodes } }),
+    patchNodes: (nodes) => call("/api/brain", { method: "PATCH", body: { nodes } }),
     deleteBrain: () => call("/api/brain", { method: "DELETE" }),
     deleteData: () => call("/api/brain/data", { method: "DELETE" }),
     sources: () => call("/api/sources"),

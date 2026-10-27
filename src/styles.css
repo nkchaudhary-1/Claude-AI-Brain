@@ -619,3 +619,4 @@ body.detail .nudge{display:none}
 body.lib-open .brand p{visibility:hidden}
 #recallBody{display:grid;gap:14px}
 @media (max-width:380px){body.app #btnImport{display:none}}
+.library footer{flex-wrap:wrap}.library footer .msg:has(textarea){flex-basis:100%}

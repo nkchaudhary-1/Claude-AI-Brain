@@ -37,9 +37,8 @@ Supabase  Auth (Google, GitHub, email link) · Postgres with row level security
 | `api/_lib/` | shared server code: `supabase.js` (cookie client), `model.js` (validation + data model), `store.js` (queries), `providers.js` (AI provider abstraction), `route.js`, `http.js` |
 | `api/auth/*` | `signin` (OAuth start), `callback` (PKCE exchange), `confirm` (magic link token hash), `email`, `signout` |
 | `api/session.js`, `api/config.js` | who is signed in; whether accounts are configured |
-| `api/brain/index.js` | GET load (creates profile + brain on first visit), PATCH rename, DELETE brain |
+| `api/brain/index.js` | GET load (creates profile + brain on first visit), PATCH rename or `{ nodes }` (the person’s note and recall progress, ≤50), DELETE brain |
 | `api/brain/import.js` | incremental sync: `start` → `batch` (≤300 nodes) → `finish` |
-| `api/brain/nodes.js` | PATCH the person’s own fields on existing nodes: their note and recall progress (≤50 per call) |
 | `api/brain/data.js` | DELETE imported data |
 | `api/sources.js` | connected AI: list, connect, disconnect, sync |
 | `supabase/migrations/` | schema, indexes, RLS, signup trigger |
@@ -89,7 +88,7 @@ Saving an article is only useful if you can find it and still know what it said 
 - **Library** (header ☰). Every article with its key ideas, every topic, and your notes, newest first. Search covers titles, quotes, keywords and notes. **Download as Markdown** exports it all with links back to each source and passage.
 - **Your note** on any node: why it matters to you, or what you'll do with it. It's shown apart from the quote, and search finds it.
 
-Signed in, notes and recall progress are saved to your account as they happen (`PATCH /api/brain/nodes`, stored in `knowledge_nodes.metadata.note` and `.review`). Otherwise they're kept in this browser (`localStorage["aibrain:mine"]`, by node id), which also works on the demo brain.
+Signed in, notes and recall progress are saved to your account as they happen (`PATCH /api/brain` with `{ nodes }`, stored in `knowledge_nodes.metadata.note` and `.review`). Otherwise they're kept in this browser (`localStorage["aibrain:mine"]`, by node id), which also works on the demo brain.
 
 ## Import your history
 
